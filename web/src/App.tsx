@@ -1,13 +1,14 @@
 import { useEffect, useState, Suspense } from 'react'
 import { api } from './api'
 import { useStore } from './store'
+import { useThemeApplier } from './theme'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { DashboardHome } from './components/DashboardHome'
 import { AgentPanel } from './components/AgentPanel'
 import { FlowsPanel } from './components/FlowsPanel'
 import { MemoryPanel } from './components/MemoryPanel'
 import { SettingsPanel } from './components/SettingsPanel'
-import { Bot, Home, Clock, Settings, Brain, CheckCircle, XCircle, Info, Wifi, WifiOff } from 'lucide-react'
+import { Bot, Home, Clock, Settings, Brain, CheckCircle, XCircle, Info, Wifi, WifiOff, Sun, Moon, Monitor } from 'lucide-react'
 
 type TabKey = 'home' | 'agents' | 'flows' | 'settings' | 'memory'
 
@@ -44,14 +45,33 @@ function Snackbar() {
   }
 
   return (
-    <div role="alert" className={`fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg border shadow-lg flex items-center gap-2 text-white ${colors[snackbar.type]}`}>
+    <div role="alert" className={`fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 z-50 px-4 py-3 rounded-lg border shadow-lg flex items-center gap-2 text-white ${colors[snackbar.type]}`}>
       {icons[snackbar.type]}
       <span className="text-sm">{snackbar.message}</span>
     </div>
   )
 }
 
+function ThemeToggle() {
+  const theme = useStore(s => s.theme)
+  const setTheme = useStore(s => s.setTheme)
+  const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light'
+  const Icon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Monitor
+  const label = `Theme: ${theme} (click for ${next})`
+  return (
+    <button
+      onClick={() => setTheme(next)}
+      className="tap text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 rounded-lg transition-colors"
+      title={label}
+      aria-label={label}
+    >
+      <Icon size={14} />
+    </button>
+  )
+}
+
 export default function App() {
+  useThemeApplier()
   const [tab, setTab] = useState<TabKey>('home')
   // Default false (fail-closed): a dead backend hides the tab rather than showing a broken panel
   const [memoryEnabled, setMemoryEnabled] = useState(false)
@@ -81,18 +101,19 @@ export default function App() {
   }, [memoryEnabled])
 
   return (
-    <div className="min-h-screen bg-[#0f0f14] text-gray-200">
+    <div className="min-h-screen bg-appbg text-gray-200">
       {/* Header */}
       <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shrink-0">
               <Bot size={18} className="text-white" />
             </div>
-            <h1 className="text-lg font-bold text-white">CLI Agent Orchestrator</h1>
+            <h1 className="text-lg font-bold text-gray-100 truncate">CLI Agent Orchestrator</h1>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-gray-500">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
+          <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+            <ThemeToggle />
+            <span className="hidden sm:inline text-xs text-gray-500">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
             <div className="flex items-center gap-1.5" title={connected ? 'Connected' : 'Disconnected'}>
               {connected ? (
                 <Wifi size={14} className="text-emerald-400" />
@@ -109,18 +130,18 @@ export default function App() {
 
       {/* Tab Bar */}
       <div className="border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-6">
-          <nav className="flex gap-1 py-2" role="tablist">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6">
+          <nav className="flex gap-1 py-2 overflow-x-auto no-scrollbar [-webkit-overflow-scrolling:touch]" role="tablist">
             {visibleTabs.map((t, i) => (
               <button
                 key={t.key}
                 role="tab"
                 aria-selected={tab === t.key}
                 onClick={() => setTab(t.key)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 shrink-0 whitespace-nowrap min-h-[40px] ${
                   tab === t.key
                     ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+                    : 'text-gray-400 hover:text-gray-100 hover:bg-gray-800/50'
                 }`}
                 title={`Alt+${i + 1}`}
               >
@@ -138,7 +159,7 @@ export default function App() {
       </div>
 
       {/* Content */}
-      <main className="max-w-7xl mx-auto px-6 py-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6">
         <ErrorBoundary>
           <Suspense fallback={<div className="text-gray-500 text-sm py-12 text-center">Loading...</div>}>
             {tab === 'home' && <DashboardHome onNavigate={(t) => setTab(t as TabKey)} />}

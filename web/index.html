@@ -1,9 +1,25 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f0f14" />
     <title>Agent Orchestrator</title>
+    <script>
+      // Apply theme before React mounts to avoid FOUC
+      (function() {
+        try {
+          const stored = localStorage.getItem('cao-theme');
+          let mode = stored ? JSON.parse(stored)?.state?.theme : null;
+          if (mode !== 'light' && mode !== 'dark' && mode !== 'system') mode = 'system';
+          const resolved = mode === 'system'
+            ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : mode;
+          document.documentElement.classList.toggle('dark', resolved === 'dark');
+        } catch {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

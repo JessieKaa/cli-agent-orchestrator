@@ -240,37 +240,37 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
   return (
     <div className="space-y-6">
       {/* Stats Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 border border-gray-700/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-900/50 flex items-center justify-center">
-              <Users size={20} className="text-emerald-400" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+        <div className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-3 sm:p-5 border border-gray-700/50">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-emerald-900/50 flex items-center justify-center shrink-0">
+              <Users size={18} className="text-emerald-400" />
             </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{sessions.length}</div>
-              <div className="text-xs text-gray-400 uppercase tracking-wide">Sessions</div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 border border-gray-700/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-cyan-900/50 flex items-center justify-center">
-              <TermIcon size={20} className="text-cyan-400" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{totalTerminals}</div>
-              <div className="text-xs text-gray-400 uppercase tracking-wide">Running Agents</div>
+            <div className="min-w-0">
+              <div className="text-xl sm:text-2xl font-bold text-gray-100">{sessions.length}</div>
+              <div className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wide">Sessions</div>
             </div>
           </div>
         </div>
-        <div className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 border border-gray-700/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-900/50 flex items-center justify-center">
-              <Package size={20} className="text-blue-400" />
+        <div className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-3 sm:p-5 border border-gray-700/50">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-cyan-900/50 flex items-center justify-center shrink-0">
+              <TermIcon size={18} className="text-cyan-400" />
             </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{profileCount}</div>
-              <div className="text-xs text-gray-400 uppercase tracking-wide">Profiles</div>
+            <div className="min-w-0">
+              <div className="text-xl sm:text-2xl font-bold text-gray-100">{totalTerminals}</div>
+              <div className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wide">Running Agents</div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-3 sm:p-5 border border-gray-700/50">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-blue-900/50 flex items-center justify-center shrink-0">
+              <Package size={18} className="text-blue-400" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xl sm:text-2xl font-bold text-gray-100">{profileCount}</div>
+              <div className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wide">Profiles</div>
             </div>
           </div>
         </div>
@@ -281,21 +281,21 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
         <button onClick={() => onNavigate('agents')} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
           <Bot size={16} /> Spawn Agent
         </button>
-        <button onClick={() => onNavigate('flows')} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
+        <button onClick={() => onNavigate('flows')} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-gray-100 text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
           <Zap size={16} /> Manage Flows
         </button>
       </div>
 
       {/* Header with sort toggle */}
       <div className="mb-1">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Active Sessions</h3>
             <p className="text-xs text-gray-500 mt-1">
               Each session is a workspace where one or more AI agents run and collaborate.
             </p>
           </div>
-          <button onClick={() => setSortOrder(o => o === 'desc' ? 'asc' : 'desc')} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+          <button onClick={() => setSortOrder(o => o === 'desc' ? 'asc' : 'desc')} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 px-3 py-1.5 min-h-[32px] rounded-lg transition-colors shrink-0">
             <ArrowDownUp size={12} />
             {sortOrder === 'desc' ? 'Newest first' : 'Oldest first'}
           </button>
@@ -428,20 +428,20 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
                             const showActive = relActive && relActive !== relCreated
                             return (
                               <div key={t.id} className="bg-gray-900/50 border border-gray-700/30 rounded-lg px-3 py-2 space-y-1.5">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
                                     <TermIcon size={12} className="text-gray-500 shrink-0" />
                                     <span className="text-xs font-medium text-gray-300 truncate">{t.agent_profile || 'default'}</span>
                                     <span className="text-[10px] font-mono text-gray-600">{t.id.slice(0, 8)}</span>
                                     <StatusBadge status={terminalStatuses[t.id] || null} />
                                     <span className="text-[10px] text-gray-600">{t.provider}</span>
                                   </div>
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    <button onClick={() => setInboxTerminalId(t.id)} className="p-1 text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Inbox"><Mail size={12} /></button>
-                                    <button onClick={() => setOutputTerminalId(t.id)} className="p-1 text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Output"><FileText size={12} /></button>
-                                    <button onClick={() => setLiveTerminal({ id: t.id, provider: t.provider, agentProfile: t.agent_profile })} className="flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-medium rounded transition-colors"><Monitor size={12} />Terminal</button>
-                                    <button onClick={() => setPendingExit(t)} disabled={exitingTerminal === t.id} className="p-1 text-gray-500 hover:text-amber-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Graceful Exit"><LogOut size={12} /></button>
-                                    <button onClick={() => setPendingClose(t)} disabled={closingTerminal === t.id} className="p-1 text-gray-500 hover:text-red-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Close"><Trash2 size={12} /></button>
+                                  <div className="flex items-center gap-1 flex-wrap justify-end">
+                                    <button onClick={() => setInboxTerminalId(t.id)} className="inline-flex items-center justify-center min-h-[32px] min-w-[32px] p-1 text-gray-500 hover:text-gray-100 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Inbox" aria-label="Inbox"><Mail size={12} /></button>
+                                    <button onClick={() => setOutputTerminalId(t.id)} className="inline-flex items-center justify-center min-h-[32px] min-w-[32px] p-1 text-gray-500 hover:text-gray-100 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Output" aria-label="Output"><FileText size={12} /></button>
+                                    <button onClick={() => setLiveTerminal({ id: t.id, provider: t.provider, agentProfile: t.agent_profile })} className="flex items-center gap-1 px-2 py-1 min-h-[32px] bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-medium rounded transition-colors"><Monitor size={12} />Terminal</button>
+                                    <button onClick={() => setPendingExit(t)} disabled={exitingTerminal === t.id} className="inline-flex items-center justify-center min-h-[32px] min-w-[32px] p-1 text-gray-500 hover:text-amber-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Graceful Exit" aria-label="Graceful Exit"><LogOut size={12} /></button>
+                                    <button onClick={() => setPendingClose(t)} disabled={closingTerminal === t.id} className="inline-flex items-center justify-center min-h-[32px] min-w-[32px] p-1 text-gray-500 hover:text-red-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Close" aria-label="Close"><Trash2 size={12} /></button>
                                   </div>
                                 </div>
                                 {/* Timestamps */}

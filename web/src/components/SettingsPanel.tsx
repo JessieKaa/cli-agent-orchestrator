@@ -76,20 +76,20 @@ export function SettingsPanel() {
   return (
     <div className="space-y-6">
       {/* Agent Profile Directories */}
-      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
           <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
             Agent Profile Directories
           </h3>
           {profileCount !== null && (
-            <span className="text-xs text-gray-500">{profileCount} profiles discovered</span>
+            <span className="text-xs text-gray-500 shrink-0">{profileCount} profiles discovered</span>
           )}
         </div>
         <p className="text-xs text-gray-500 mb-2">
           Add directories where your agent profile <code className="text-gray-400">.md</code> files are stored.
           CAO scans all directories and makes profiles available to every provider.
         </p>
-        <p className="text-xs text-emerald-400/70 mb-5">
+        <p className="text-xs text-emerald-400/70 mb-5 break-words">
           Install built-in profiles with: <code className="bg-gray-900 px-1.5 py-0.5 rounded text-emerald-300">cao install developer</code>
         </p>
 
@@ -98,11 +98,12 @@ export function SettingsPanel() {
             {dirs.map((dir, i) => (
               <div key={i} className="flex items-center gap-2 bg-gray-900/50 border border-gray-700/30 rounded-lg px-3 py-2.5">
                 <FolderOpen size={14} className="text-emerald-500 shrink-0" />
-                <span className="text-sm text-gray-300 font-mono flex-1 truncate" title={dir}>{dir}</span>
+                <span className="text-xs sm:text-sm text-gray-300 font-mono flex-1 min-w-0 truncate" title={dir}>{dir}</span>
                 <button
                   onClick={() => removeDir(i)}
-                  className="text-gray-500 hover:text-red-400 transition-colors shrink-0"
+                  className="inline-flex items-center justify-center min-h-[32px] min-w-[32px] p-1 text-gray-500 hover:text-red-400 transition-colors shrink-0"
                   title="Remove directory"
+                  aria-label="Remove directory"
                 >
                   <X size={14} />
                 </button>
@@ -126,12 +127,12 @@ export function SettingsPanel() {
             onChange={e => setNewDir(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addDir()}
             placeholder="/path/to/agent-profiles"
-            className="flex-1 bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 font-mono focus:border-emerald-500 focus:outline-none"
+            className="flex-1 min-w-0 bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 font-mono focus:border-emerald-500 focus:outline-none"
           />
           <button
             onClick={addDir}
             disabled={!newDir.trim()}
-            className="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white text-sm px-4 py-2.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-gray-100 text-sm px-4 py-2.5 min-h-[40px] rounded-lg transition-colors shrink-0"
           >
             <Plus size={14} /> Add
           </button>
@@ -139,18 +140,18 @@ export function SettingsPanel() {
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-sm font-medium px-5 py-2.5 min-h-[40px] rounded-lg transition-colors"
         >
           {saved ? <CheckCircle size={16} /> : <Save size={16} />}
           {saving ? 'Saving...' : saved ? 'Saved' : 'Save Settings'}
         </button>
         <button
           onClick={() => { refreshProfiles(); showSnackbar({ type: 'info', message: 'Refreshing profiles...' }) }}
-          className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2.5 rounded-lg transition-colors"
+          className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-gray-100 text-sm px-4 py-2.5 min-h-[40px] rounded-lg transition-colors"
         >
           <RefreshCw size={14} /> Refresh Profiles
         </button>

@@ -157,15 +157,15 @@ export function MemoryPanel() {
   return (
     <div className="space-y-6">
       {/* Memory List */}
-      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
           <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
             Memories ({filtered.length})
           </h3>
           <button
             onClick={() => setPendingClear(scopeFilter)}
             disabled={!scopeFilter}
-            className="flex items-center gap-2 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 min-h-[40px] rounded-lg transition-colors shrink-0"
             title={scopeFilter ? `Clear all ${scopeFilter} memories` : 'Select a scope filter to enable'}
           >
             <Trash2 size={14} />
@@ -174,27 +174,27 @@ export function MemoryPanel() {
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-2 sm:gap-3 mb-4 flex-wrap">
           <CustomSelect
             value={scopeFilter}
             onChange={setScopeFilter}
             options={SCOPE_OPTIONS}
-            className="w-40"
+            className="w-full sm:w-40"
           />
           <CustomSelect
             value={typeFilter}
             onChange={setTypeFilter}
             options={TYPE_OPTIONS}
-            className="w-40"
+            className="w-full sm:w-40"
           />
-          <div className="relative">
+          <div className="relative flex-1 min-w-[140px]">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Filter keys..."
-              className="bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg pl-8 pr-3 py-1.5 w-48 focus:border-emerald-500 focus:outline-none"
+              className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg pl-8 pr-3 py-1.5 focus:border-emerald-500 focus:outline-none"
             />
           </div>
         </div>
@@ -213,10 +213,10 @@ export function MemoryPanel() {
               <div key={rowId(m)} className="bg-gray-900/50 border border-gray-700/30 rounded-lg">
                 {/* Row header */}
                 <div
-                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-800/50 transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-3 gap-2 cursor-pointer hover:bg-gray-800/50 transition-colors"
                   onClick={() => handleExpand(m)}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-wrap">
                     <Brain size={14} className="text-gray-400 shrink-0" />
                     <span className="text-sm text-gray-200 font-medium truncate">{m.key}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${SCOPE_PILL[m.scope] || 'bg-gray-700 text-gray-400'}`}>
@@ -231,21 +231,22 @@ export function MemoryPanel() {
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0 ml-3">
+                  <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 sm:ml-3">
                     {/* Delete */}
                     <button
                       onClick={e => { e.stopPropagation(); setPendingDelete(m) }}
-                      className="p-1.5 text-gray-500 hover:text-red-400 transition-colors rounded"
+                      className="inline-flex items-center justify-center min-h-[32px] min-w-[32px] p-1 text-gray-500 hover:text-red-400 transition-colors rounded"
                       title="Delete memory"
+                      aria-label="Delete memory"
                     >
                       <Trash2 size={14} />
                     </button>
 
                     {/* Expand chevron */}
                     {expandedKey === rowId(m) ? (
-                      <ChevronDown size={14} className="text-gray-500" />
+                      <ChevronDown size={14} className="text-gray-500 shrink-0" />
                     ) : (
-                      <ChevronRight size={14} className="text-gray-500" />
+                      <ChevronRight size={14} className="text-gray-500 shrink-0" />
                     )}
                   </div>
                 </div>
@@ -253,19 +254,19 @@ export function MemoryPanel() {
                 {/* Expanded details */}
                 {expandedKey === rowId(m) && (
                   <div className="px-3 pb-3 text-xs text-gray-400 space-y-3 border-t border-gray-700/30 pt-3">
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                       <div>Created: <span className="text-gray-300">{new Date(m.created_at).toLocaleString()}</span></div>
                       <div>Updated: <span className="text-gray-300">{new Date(m.updated_at).toLocaleString()}</span></div>
                       {m.scope_id && (
-                        <div className="col-span-2">Scope ID: <span className="text-gray-300 font-mono">{m.scope_id}</span></div>
+                        <div className="col-span-1 sm:col-span-2 min-w-0">Scope ID: <span className="text-gray-300 font-mono break-all">{m.scope_id}</span></div>
                       )}
                       {m.tags && (
-                        <div className="col-span-2">Tags: <span className="text-gray-300">{m.tags}</span></div>
+                        <div className="col-span-1 sm:col-span-2 min-w-0">Tags: <span className="text-gray-300 break-all">{m.tags}</span></div>
                       )}
                     </div>
                     {/* Plain text only — memory bodies are untrusted agent output */}
                     {detail && detail.id === rowId(m) ? (
-                      <div className="bg-gray-950/60 border border-gray-700/30 rounded-lg p-3 text-sm text-gray-300 font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                      <div className="bg-gray-950/60 border border-gray-700/30 rounded-lg p-3 text-xs sm:text-sm text-gray-300 font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
                         {detail.data.content}
                       </div>
                     ) : (

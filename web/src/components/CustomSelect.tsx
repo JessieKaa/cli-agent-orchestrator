@@ -66,7 +66,7 @@ export function CustomSelect({ value, onChange, options, placeholder = 'Select..
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-lg shadow-xl shadow-black/30 max-h-64 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-lg shadow-xl shadow-black/30 max-h-64 md:max-h-[60vh] overflow-y-auto">
           {groups.map((group, gi) => (
             <div key={gi}>
               {group.label && (

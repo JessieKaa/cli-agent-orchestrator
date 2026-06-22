@@ -118,38 +118,39 @@ export function InboxPanel({ terminalId, onClose }: InboxPanelProps) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative bg-gray-900 border border-gray-700/50 rounded-2xl shadow-2xl w-full max-w-[600px] mx-4 flex flex-col" style={{ maxHeight: 'calc(100vh - 80px)' }}>
+      <div className="relative bg-gray-900 border border-gray-700/50 rounded-2xl shadow-2xl w-full max-w-[600px] mx-3 sm:mx-4 flex flex-col" style={{ maxHeight: 'calc(100vh - 60px)' }}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700/50 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-900/50 flex items-center justify-center">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-4 border-b border-gray-700/50 shrink-0 gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-emerald-900/50 flex items-center justify-center shrink-0">
               <Mail size={16} className="text-emerald-400" />
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-white">Agent Inbox</h3>
-              <p className="text-[11px] text-gray-500">Messages between agents in this session <span className="font-mono">({terminalId})</span></p>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-gray-100">Agent Inbox</h3>
+              <p className="text-[11px] text-gray-500 truncate">Messages between agents in this session <span className="font-mono">({terminalId})</span></p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-500 hover:text-white transition-colors rounded-lg hover:bg-gray-800"
+            className="tap shrink-0 text-gray-500 hover:text-gray-100 transition-colors rounded-lg hover:bg-gray-800"
             title="Close"
+            aria-label="Close"
           >
             <X size={16} />
           </button>
         </div>
 
         {/* Filter Tabs */}
-        <div className="px-5 py-3 border-b border-gray-700/30 shrink-0 overflow-x-auto">
+        <div className="px-4 sm:px-5 py-3 border-b border-gray-700/30 shrink-0 overflow-x-auto no-scrollbar [-webkit-overflow-scrolling:touch]">
           <div className="flex gap-2">
             {STATUS_FILTERS.map(f => (
               <button
                 key={f.key}
                 onClick={() => setFilter(f.key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition-colors ${
+                className={`px-3 py-1.5 min-h-[32px] text-xs font-medium rounded-full whitespace-nowrap shrink-0 transition-colors ${
                   filter === f.key
                     ? 'bg-emerald-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+                    : 'bg-gray-800 text-gray-400 hover:text-gray-100 hover:bg-gray-700'
                 }`}
               >
                 {f.label}
@@ -159,7 +160,7 @@ export function InboxPanel({ terminalId, onClose }: InboxPanelProps) {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 min-h-[200px]">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-3 min-h-[200px]">
           {loading && messages.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 size={20} className="animate-spin text-gray-500" />
@@ -204,7 +205,7 @@ export function InboxPanel({ terminalId, onClose }: InboxPanelProps) {
         </div>
 
         {/* Send Form */}
-        <div className="px-5 py-4 border-t border-gray-700/50 shrink-0">
+        <div className="px-4 sm:px-5 py-4 border-t border-gray-700/50 shrink-0">
           <div className="flex gap-2">
             <input
               ref={inputRef}
@@ -213,12 +214,12 @@ export function InboxPanel({ terminalId, onClose }: InboxPanelProps) {
               onChange={e => setSendText(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
-              className="flex-1 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none placeholder-gray-600"
+              className="flex-1 min-w-0 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none placeholder-gray-600"
             />
             <button
               onClick={handleSend}
               disabled={!sendText.trim() || sending}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+              className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-4 py-2.5 min-h-[44px] rounded-lg transition-colors shrink-0"
             >
               {sending ? (
                 <Loader2 size={14} className="animate-spin" />
