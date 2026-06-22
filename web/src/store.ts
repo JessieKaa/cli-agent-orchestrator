@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { api, Session, SessionDetail, TerminalMeta } from './api'
 
 // Only trigger React re-renders when data actually changed
@@ -11,6 +12,8 @@ interface Snackbar {
   message: string
 }
 
+export type Theme = 'light' | 'dark' | 'system'
+
 interface Store {
   sessions: Session[]
   activeSession: string | null
@@ -18,6 +21,7 @@ interface Store {
   connected: boolean
   snackbar: Snackbar | null
   terminalStatuses: Record<string, string>
+  theme: Theme
 
   fetchSessions: () => Promise<void>
   selectSession: (name: string | null) => Promise<void>
@@ -28,49 +32,53 @@ interface Store {
   setConnected: (connected: boolean) => void
   setTerminalStatus: (id: string, status: string) => void
   clearTerminalStatuses: (ids: string[]) => void
+  setTheme: (theme: Theme) => void
 }
 
-export const useStore = create<Store>((set, get) => ({
-  sessions: [],
-  activeSession: null,
-  activeSessionDetail: null,
-  connected: false,
-  snackbar: null,
-  terminalStatuses: {},
+export const useStore = create<Store>()(
+  persist(
+    (set, get) => ({
+      sessions: [],
+      activeSession: null,
+      activeSessionDetail: null,
+      connected: false,
+      snackbar: null,
+      terminalStatuses: {},
+      theme: 'system',
 
-  fetchSessions: async () => {
-    try {
-      const sessions = await api.listSessions()
-      const prev = get()
-      // Only skip empty responses when reconnecting (connected was false),
-      // not after intentional deletions.
-      if (sessions.length === 0 && prev.sessions.length > 0 && !prev.connected) {
-        set({ connected: true })
-        return
-      }
-      if (!prev.connected || !jsonEqual(prev.sessions, sessions)) {
-        set({ sessions, connected: true })
-      }
-    } catch {
-      if (get().connected) set({ connected: false })
-    }
-  },
+      fetchSessions: async () => {
+        try {
+          const sessions = await api.listSessions()
+          const prev = get()
+          // Only skip empty responses when reconnecting (connected was false),
+          // not after intentional deletions.
+          if (sessions.length === 0 && prev.sessions.length > 0 && !prev.connected) {
+            set({ connected: true })
+            return
+          }
+          if (!prev.connected || !jsonEqual(prev.sessions, sessions)) {
+            set({ sessions, connected: true })
+          }
+        } catch {
+          if (get().connected) set({ connected: false })
+        }
+      },
 
-  selectSession: async (name) => {
-    if (!name) {
-      set({ activeSession: null, activeSessionDetail: null })
-      return
-    }
-    set({ activeSession: name })
-    try {
-      const detail = await api.getSession(name)
-      if (!jsonEqual(get().activeSessionDetail, detail)) {
-        set({ activeSessionDetail: detail })
-      }
-    } catch {
-      set({ activeSessionDetail: null })
-    }
-  },
+      selectSession: async (name) => {
+        if (!name) {
+          set({ activeSession: null, activeSessionDetail: null })
+          return
+        }
+        set({ activeSession: name })
+        try {
+          const detail = await api.getSession(name)
+          if (!jsonEqual(get().activeSessionDetail, detail)) {
+            set({ activeSessionDetail: detail })
+          }
+        } catch {
+          set({ activeSessionDetail: null })
+        }
+      },
 
   createSession: async (provider, agentProfile, workingDirectory, sessionName) => {
     try {
@@ -82,35 +90,42 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
-  deleteSession: async (name) => {
-    try {
-      await api.deleteSession(name)
-      get().showSnackbar({ type: 'success', message: `Deleted ${name}` })
-      if (get().activeSession === name) {
-        set({ activeSession: null, activeSessionDetail: null })
-      }
-      await get().fetchSessions()
-    } catch (e: any) {
-      get().showSnackbar({ type: 'error', message: e.message || 'Failed to delete session' })
-    }
-  },
+      deleteSession: async (name) => {
+        try {
+          await api.deleteSession(name)
+          get().showSnackbar({ type: 'success', message: `Deleted ${name}` })
+          if (get().activeSession === name) {
+            set({ activeSession: null, activeSessionDetail: null })
+          }
+          await get().fetchSessions()
+        } catch (e: any) {
+          get().showSnackbar({ type: 'error', message: e.message || 'Failed to delete session' })
+        }
+      },
 
-  showSnackbar: (snackbar) => set({ snackbar }),
-  hideSnackbar: () => set({ snackbar: null }),
-  setConnected: (connected) => set({ connected }),
-  setTerminalStatus: (id, status) =>
-    set(state => {
-      const normalized = status ? status.toUpperCase() : status
-      if (state.terminalStatuses[id] === normalized) return state
-      return { terminalStatuses: { ...state.terminalStatuses, [id]: normalized } }
+      showSnackbar: (snackbar) => set({ snackbar }),
+      hideSnackbar: () => set({ snackbar: null }),
+      setConnected: (connected) => set({ connected }),
+      setTerminalStatus: (id, status) =>
+        set(state => {
+          const normalized = status ? status.toUpperCase() : status
+          if (state.terminalStatuses[id] === normalized) return state
+          return { terminalStatuses: { ...state.terminalStatuses, [id]: normalized } }
+        }),
+      clearTerminalStatuses: (ids) =>
+        set(state => {
+          const next: Record<string, string> = {}
+          for (const id of ids) {
+            if (state.terminalStatuses[id]) next[id] = state.terminalStatuses[id]
+          }
+          if (Object.keys(next).length === Object.keys(state.terminalStatuses).length) return state
+          return { terminalStatuses: next }
+        }),
+      setTheme: (theme) => set({ theme }),
     }),
-  clearTerminalStatuses: (ids) =>
-    set(state => {
-      const next: Record<string, string> = {}
-      for (const id of ids) {
-        if (state.terminalStatuses[id]) next[id] = state.terminalStatuses[id]
-      }
-      if (Object.keys(next).length === Object.keys(state.terminalStatuses).length) return state
-      return { terminalStatuses: next }
-    }),
-}))
+    {
+      name: 'cao-theme',
+      partialize: (s) => ({ theme: s.theme }) as Store,
+    }
+  )
+)

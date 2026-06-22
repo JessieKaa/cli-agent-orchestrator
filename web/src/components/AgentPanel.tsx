@@ -199,27 +199,27 @@ export function AgentPanel() {
   return (
     <div className="space-y-6">
       {/* Sessions List */}
-      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-1">
+      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
           <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
             Sessions ({sessions.length})
           </h3>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {sessions.length > 3 && (
-              <div className="relative">
+              <div className="relative flex-1 sm:flex-initial min-w-[140px]">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
                 <input
                   type="text"
                   value={sessionSearch}
                   onChange={e => setSessionSearch(e.target.value)}
                   placeholder="Filter sessions..."
-                  className="bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg pl-8 pr-3 py-1.5 w-48 focus:border-emerald-500 focus:outline-none"
+                  className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg pl-8 pr-3 py-1.5 focus:border-emerald-500 focus:outline-none"
                 />
               </div>
             )}
             <button
               onClick={() => setShowSpawnModal(true)}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 min-h-[40px] rounded-lg transition-colors"
             >
               <Plus size={14} />
               Spawn Agent
@@ -236,23 +236,24 @@ export function AgentPanel() {
             {sessions.filter(s => !sessionSearch || s.id.includes(sessionSearch) || s.name.includes(sessionSearch)).map(s => (
               <div
                 key={s.id}
-                className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
+                className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors gap-2 ${
                   activeSession === s.id ? 'bg-emerald-900/30 border border-emerald-700/50' : 'bg-gray-900/50 border border-gray-700/30 hover:bg-gray-800/80'
                 }`}
                 onClick={() => selectSession(activeSession === s.id ? null : s.id)}
               >
-                <div className="flex items-center gap-3">
-                  <Bot size={16} className="text-emerald-400" />
-                  <span className="text-sm text-gray-200 font-mono">{s.id}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${s.status === 'active' ? 'bg-emerald-900/50 text-emerald-400' : 'bg-gray-700 text-gray-400'}`}>
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                  <Bot size={16} className="text-emerald-400 shrink-0" />
+                  <span className="text-sm text-gray-200 font-mono truncate">{s.id}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${s.status === 'active' ? 'bg-emerald-900/50 text-emerald-400' : 'bg-gray-700 text-gray-400'}`}>
                     {s.status}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                   <button
                     onClick={e => { e.stopPropagation(); deleteSession(s.id) }}
-                    className="p-1.5 text-gray-500 hover:text-red-400 transition-colors rounded"
+                    className="inline-flex items-center justify-center min-h-[32px] min-w-[32px] p-1 text-gray-500 hover:text-red-400 transition-colors rounded"
                     title="Delete session"
+                    aria-label="Delete session"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -266,14 +267,14 @@ export function AgentPanel() {
 
       {/* Session Detail */}
       {activeSessionDetail && (
-        <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-              Terminals in {activeSession}
+        <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-4 sm:p-5">
+          <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+            <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide min-w-0 truncate">
+              Terminals in <span className="font-mono normal-case">{activeSession}</span>
             </h3>
             <button
               onClick={() => setShowAddAgent(!showAddAgent)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-emerald-400 bg-gray-900/50 hover:bg-gray-900 border border-gray-700/50 hover:border-emerald-700/50 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] text-xs font-medium text-gray-400 hover:text-emerald-400 bg-gray-900/50 hover:bg-gray-900 border border-gray-700/50 hover:border-emerald-700/50 rounded-lg transition-colors shrink-0"
               title="Add another agent to this session so they can collaborate"
             >
               <Plus size={14} />
@@ -287,8 +288,8 @@ export function AgentPanel() {
               <p className="text-xs text-gray-500">
                 Add another agent to this session. Agents in the same session can send messages to each other and coordinate on tasks. A supervisor can delegate work to agents you add here.
               </p>
-              <div className="flex gap-3 items-end flex-wrap">
-                <div className="min-w-[160px]">
+              <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr_auto] gap-3 items-end">
+                <div className="min-w-0">
                   <label className="block text-xs text-gray-500 mb-1">Provider</label>
                   <CustomSelect
                     value={addProvider}
@@ -302,7 +303,7 @@ export function AgentPanel() {
                     }))}
                   />
                 </div>
-                <div className="flex-1 min-w-[180px]">
+                <div className="min-w-0">
                   <label className="block text-xs text-gray-500 mb-1">Agent Profile</label>
                   {profiles.length > 0 ? (
                     <CustomSelect
@@ -329,7 +330,7 @@ export function AgentPanel() {
                 <button
                   onClick={handleAddAgent}
                   disabled={!addProfile.trim() || addingAgent}
-                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+                  className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium px-4 py-2 min-h-[40px] rounded-lg transition-colors"
                 >
                   <Plus size={14} />
                   {addingAgent ? 'Adding...' : 'Add'}
@@ -355,18 +356,18 @@ export function AgentPanel() {
           <div className="space-y-2">
             {activeSessionDetail.terminals.map(t => (
               <div key={t.id} className="bg-gray-900/50 border border-gray-700/30 rounded-lg p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <TermIcon size={14} className="text-gray-400" />
-                    <span className="text-sm font-mono text-gray-300">{t.id}</span>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 flex-wrap">
+                    <TermIcon size={14} className="text-gray-400 shrink-0" />
+                    <span className="text-sm font-mono text-gray-300 truncate">{t.id}</span>
                     <StatusBadge status={terminalStatuses[t.id] || null} />
                     <span className="text-xs text-gray-500">{t.provider}</span>
                     {t.agent_profile && <span className="text-xs text-emerald-400">{t.agent_profile}</span>}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end w-full sm:w-auto">
                     <button
                       onClick={() => setInboxTerminalId(t.id)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[32px] bg-gray-700 hover:bg-gray-600 text-gray-100 text-xs font-medium rounded-lg transition-colors"
                       title="View inbox"
                     >
                       <Mail size={14} />
@@ -374,7 +375,7 @@ export function AgentPanel() {
                     </button>
                     <button
                       onClick={() => openTerminal(t.id, t.provider, t.agent_profile)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[32px] bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-colors"
                       title="Open live terminal"
                     >
                       <Monitor size={14} />
@@ -382,7 +383,7 @@ export function AgentPanel() {
                     </button>
                     <button
                       onClick={() => setOutputTerminalId(t.id)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[32px] bg-gray-700 hover:bg-gray-600 text-gray-100 text-xs font-medium rounded-lg transition-colors"
                       title="View output"
                     >
                       <FileText size={14} />
@@ -391,7 +392,7 @@ export function AgentPanel() {
                     <button
                       onClick={() => setPendingExit(t as TerminalMeta)}
                       disabled={exitingTerminal === t.id}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[32px] bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
                       title="Graceful exit"
                     >
                       <LogOut size={14} />
@@ -400,7 +401,7 @@ export function AgentPanel() {
                     <button
                       onClick={() => setPendingClose(t as TerminalMeta)}
                       disabled={closingTerminal === t.id}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[32px] bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
                       title="Close terminal"
                     >
                       <Trash2 size={14} />
@@ -410,9 +411,9 @@ export function AgentPanel() {
                 </div>
                 {/* Working Directory Display */}
                 {terminalWorkDirs[t.id] && (
-                  <div className="flex items-center gap-1.5" title={terminalWorkDirs[t.id]!}>
+                  <div className="flex items-center gap-1.5 min-w-0" title={terminalWorkDirs[t.id]!}>
                     <FolderOpen size={12} className="text-gray-600 shrink-0" />
-                    <span className="text-xs font-mono text-gray-500 truncate max-w-[400px]">{terminalWorkDirs[t.id]}</span>
+                    <span className="text-xs font-mono text-gray-500 truncate max-w-full sm:max-w-[400px]">{terminalWorkDirs[t.id]}</span>
                   </div>
                 )}
                 {/* Quick Send Input */}
@@ -431,13 +432,13 @@ export function AgentPanel() {
                       onChange={e => setSendInputValues(prev => ({ ...prev, [t.id]: e.target.value }))}
                       onKeyDown={e => { if (e.key === 'Enter') handleSendInput(t.id) }}
                       placeholder="Type a message..."
-                      className="flex-1 bg-gray-900 border border-gray-700 text-gray-200 text-sm font-mono rounded-lg px-3 py-1.5 focus:border-emerald-500 focus:outline-none"
+                      className="flex-1 min-w-0 bg-gray-900 border border-gray-700 text-gray-200 text-sm font-mono rounded-lg px-3 py-1.5 focus:border-emerald-500 focus:outline-none"
                       autoFocus
                     />
                     <button
                       onClick={() => handleSendInput(t.id)}
                       disabled={sendingInput === t.id || !(sendInputValues[t.id] || '').trim()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors shrink-0"
                     >
                       <Send size={12} />
                       {sendingInput === t.id ? 'Sending...' : 'Send'}
@@ -513,10 +514,10 @@ export function AgentPanel() {
       {showSpawnModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSpawnModal(false)} />
-          <div className="relative bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl shadow-black/50 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl shadow-black/50 w-full max-w-lg mx-3 sm:mx-4 max-h-[90vh] overflow-y-auto">
             {/* Modal header */}
-            <div className="flex items-center justify-between p-5 border-b border-gray-700/50">
-              <div>
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-gray-700/50 gap-3">
+              <div className="min-w-0">
                 <h3 className="text-base font-semibold text-gray-200">Spawn Agent</h3>
                 <p className="text-xs text-gray-500 mt-1">
                   Launch a new AI agent in its own isolated tmux session.
@@ -524,14 +525,15 @@ export function AgentPanel() {
               </div>
               <button
                 onClick={() => setShowSpawnModal(false)}
-                className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-700/50"
+                className="tap shrink-0 text-gray-500 hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-700/50"
+                aria-label="Close"
               >
                 <X size={18} />
               </button>
             </div>
 
             {/* Modal body */}
-            <div className="p-5 space-y-4">
+            <div className="p-4 sm:p-5 space-y-4">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Provider</label>
                 <CustomSelect
@@ -608,12 +610,12 @@ export function AgentPanel() {
               {profiles.length > 0 && (
                 <div>
                   <label className="block text-xs text-gray-500 mb-2">Quick pick</label>
-                  <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
                     {profiles.slice(0, 12).map(p => (
                       <button
                         key={`${p.source}-${p.name}`}
                         onClick={() => setProfile(p.name)}
-                        className={`text-left px-2.5 py-2 rounded-lg border text-xs transition-all ${
+                        className={`text-left px-2.5 py-2 min-h-[36px] rounded-lg border text-xs transition-all ${
                           profile === p.name
                             ? 'bg-emerald-900/30 border-emerald-700/50 text-emerald-300'
                             : 'bg-gray-900/50 border-gray-700/30 hover:bg-gray-800/80 text-gray-300'
@@ -629,17 +631,17 @@ export function AgentPanel() {
             </div>
 
             {/* Modal footer */}
-            <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-700/50">
+            <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-gray-700/50">
               <button
                 onClick={() => setShowSpawnModal(false)}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+                className="px-4 py-2 min-h-[40px] text-sm text-gray-400 hover:text-gray-200 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreate}
                 disabled={!profile.trim() || creating}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-5 py-2.5 min-h-[40px] rounded-lg transition-colors"
               >
                 <Play size={14} />
                 {creating ? 'Spawning...' : 'Spawn Agent'}

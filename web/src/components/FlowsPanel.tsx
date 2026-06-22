@@ -167,14 +167,14 @@ export function FlowsPanel() {
   return (
     <div className="space-y-6">
       {/* Flow List */}
-      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
           <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
             Automated Flows ({flows.length})
           </h3>
           <button
             onClick={() => { resetForm(); setShowCreateModal(true) }}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 min-h-[40px] rounded-lg transition-colors shrink-0"
           >
             <Plus size={14} />
             Create Flow
@@ -195,13 +195,13 @@ export function FlowsPanel() {
               <div key={f.name} className="bg-gray-900/50 border border-gray-700/30 rounded-lg">
                 {/* Row header */}
                 <div
-                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-800/50 transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-3 gap-2 cursor-pointer hover:bg-gray-800/50 transition-colors"
                   onClick={() => setExpanded(expanded === f.name ? null : f.name)}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-wrap">
                     <Clock size={14} className="text-gray-400 shrink-0" />
                     <span className="text-sm text-gray-200 font-medium truncate">{f.name}</span>
-                    <span className="text-xs text-gray-500 shrink-0" title={f.schedule}>
+                    <span className="text-xs text-gray-500 shrink-0 break-all" title={f.schedule}>
                       {cronToLabel(f.schedule)}
                     </span>
                     <span className="text-xs text-gray-500 shrink-0">{f.agent_profile}</span>
@@ -213,12 +213,12 @@ export function FlowsPanel() {
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0 ml-3">
+                  <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 sm:ml-3">
                     {/* Toggle enable/disable */}
                     <button
                       onClick={e => { e.stopPropagation(); handleToggle(f) }}
                       disabled={togglingFlow === f.name}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${
                         f.enabled ? 'bg-emerald-600' : 'bg-gray-600'
                       } ${togglingFlow === f.name ? 'opacity-50' : ''}`}
                       title={f.enabled ? 'Disable flow' : 'Enable flow'}
@@ -226,8 +226,8 @@ export function FlowsPanel() {
                       {togglingFlow === f.name ? (
                         <Loader2 size={12} className="absolute left-1/2 -translate-x-1/2 animate-spin text-white" />
                       ) : (
-                        <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
-                          f.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                        <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                          f.enabled ? 'translate-x-[22px]' : 'translate-x-[4px]'
                         }`} />
                       )}
                     </button>
@@ -236,7 +236,7 @@ export function FlowsPanel() {
                     <button
                       onClick={e => { e.stopPropagation(); handleRun(f) }}
                       disabled={runningFlow === f.name}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[32px] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
                       title="Run flow now"
                     >
                       {runningFlow === f.name ? (
@@ -250,17 +250,18 @@ export function FlowsPanel() {
                     {/* Delete */}
                     <button
                       onClick={e => { e.stopPropagation(); setPendingDelete(f) }}
-                      className="p-1.5 text-gray-500 hover:text-red-400 transition-colors rounded"
+                      className="inline-flex items-center justify-center min-h-[32px] min-w-[32px] p-1 text-gray-500 hover:text-red-400 transition-colors rounded"
                       title="Delete flow"
+                      aria-label="Delete flow"
                     >
                       <Trash2 size={14} />
                     </button>
 
                     {/* Expand chevron */}
                     {expanded === f.name ? (
-                      <ChevronDown size={14} className="text-gray-500" />
+                      <ChevronDown size={14} className="text-gray-500 shrink-0" />
                     ) : (
-                      <ChevronRight size={14} className="text-gray-500" />
+                      <ChevronRight size={14} className="text-gray-500 shrink-0" />
                     )}
                   </div>
                 </div>
@@ -268,20 +269,20 @@ export function FlowsPanel() {
                 {/* Expanded details */}
                 {expanded === f.name && (
                   <div className="px-3 pb-3 text-xs text-gray-400 space-y-3 border-t border-gray-700/30 pt-3">
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-                      <div>Schedule: <span className="text-gray-300 font-mono">{f.schedule}</span></div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+                      <div>Schedule: <span className="text-gray-300 font-mono break-all">{f.schedule}</span></div>
                       <div>Provider: <span className="text-gray-300">{f.provider || 'default'}</span></div>
                       <div>Profile: <span className="text-gray-300">{f.agent_profile}</span></div>
                       <div>Last Run: <span className="text-gray-300">{f.last_run ? new Date(f.last_run).toLocaleString() : 'never'}</span></div>
                       <div>Next Run: <span className="text-gray-300">{f.next_run ? new Date(f.next_run).toLocaleString() : 'n/a'}</span></div>
                       {f.file_path && (
-                        <div className="col-span-2">File: <span className="text-gray-300 font-mono">{f.file_path}</span></div>
+                        <div className="col-span-1 sm:col-span-2 min-w-0">File: <span className="text-gray-300 font-mono break-all">{f.file_path}</span></div>
                       )}
                     </div>
                     {f.prompt_template && (
                       <div>
                         <div className="text-[11px] text-gray-500 uppercase tracking-wider mb-1.5">Prompt</div>
-                        <div className="bg-gray-950/60 border border-gray-700/30 rounded-lg p-3 text-sm text-gray-300 font-mono whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
+                        <div className="bg-gray-950/60 border border-gray-700/30 rounded-lg p-3 text-xs sm:text-sm text-gray-300 font-mono whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
                           {f.prompt_template}
                         </div>
                       </div>
@@ -298,10 +299,10 @@ export function FlowsPanel() {
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCreateModal(false)} />
-          <div className="relative bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl shadow-black/50 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl shadow-black/50 w-full max-w-lg mx-3 sm:mx-4 max-h-[90vh] overflow-y-auto">
             {/* Modal header */}
-            <div className="flex items-center justify-between p-5 border-b border-gray-700/50">
-              <div>
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-gray-700/50 gap-3">
+              <div className="min-w-0">
                 <h3 className="text-base font-semibold text-gray-200">Create Flow</h3>
                 <p className="text-xs text-gray-500 mt-1">
                   Schedule an agent to run automatically on a recurring basis.
@@ -309,14 +310,15 @@ export function FlowsPanel() {
               </div>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-700/50"
+                className="tap shrink-0 text-gray-500 hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-700/50"
+                aria-label="Close"
               >
                 <X size={18} />
               </button>
             </div>
 
             {/* Modal body */}
-            <div className="p-5 space-y-4">
+            <div className="p-4 sm:p-5 space-y-4">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Name</label>
                 <input
@@ -362,8 +364,8 @@ export function FlowsPanel() {
                 )}
               </div>
 
-              <div className="flex gap-3">
-                <div className="flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="min-w-0">
                   <label className="block text-xs text-gray-500 mb-1">Agent Profile</label>
                   {profiles.length > 0 ? (
                     <CustomSelect
@@ -386,7 +388,7 @@ export function FlowsPanel() {
                     />
                   )}
                 </div>
-                <div className="flex-1">
+                <div className="min-w-0">
                   <label className="block text-xs text-gray-500 mb-1">Provider</label>
                   <CustomSelect
                     value={provider}
@@ -415,17 +417,17 @@ export function FlowsPanel() {
             </div>
 
             {/* Modal footer */}
-            <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-700/50">
+            <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-gray-700/50">
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+                className="px-4 py-2 min-h-[40px] text-sm text-gray-400 hover:text-gray-200 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreate}
                 disabled={!name.trim() || !schedule.trim() || !agentProfile.trim() || !promptTemplate.trim() || creating}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-5 py-2.5 min-h-[40px] rounded-lg transition-colors"
               >
                 {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
                 {creating ? 'Creating...' : 'Create Flow'}
