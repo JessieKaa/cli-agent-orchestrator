@@ -394,6 +394,25 @@ def list_terminals_by_session(tmux_session: str) -> List[Dict[str, Any]]:
                 "tmux_window": t.tmux_window,
                 "provider": t.provider,
                 "agent_profile": t.agent_profile,
+                "caller_id": t.caller_id,
+                "last_active": t.last_active,
+            }
+            for t in terminals
+        ]
+
+
+def list_terminals_by_caller(caller_id: str) -> List[Dict[str, Any]]:
+    """List all terminals created by a given caller terminal."""
+    with SessionLocal() as db:
+        terminals = db.query(TerminalModel).filter(TerminalModel.caller_id == caller_id).all()
+        return [
+            {
+                "id": t.id,
+                "tmux_session": t.tmux_session,
+                "tmux_window": t.tmux_window,
+                "provider": t.provider,
+                "agent_profile": t.agent_profile,
+                "caller_id": t.caller_id,
                 "last_active": t.last_active,
             }
             for t in terminals

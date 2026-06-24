@@ -650,11 +650,8 @@ class HerdrInboxService:
     def _handle_lifecycle_event(self, event_type: str, data: dict) -> None:
         """Handle pane.closed and workspace.closed events."""
         from cli_agent_orchestrator.backends.registry import get_backend
-        from cli_agent_orchestrator.clients.database import (
-            delete_terminal,
-            delete_terminals_by_session,
-            get_terminal_metadata,
-        )
+        from cli_agent_orchestrator.clients.database import get_terminal_metadata
+        from cli_agent_orchestrator.services import session_service, terminal_service
 
         if event_type == "pane.closed":
             pane_id = data.get("pane_id", "")
@@ -691,15 +688,15 @@ class HerdrInboxService:
                 )
                 return
 
-            # Remove from maps
+            # Remove from maps before service-layer teardown so later lookups don't
+            # treat the closed pane as still attached.
             self._pane_to_terminal.pop(pane_id, None)
             self._terminal_to_pane.pop(terminal_id, None)
             self._kiro_terminals.discard(terminal_id)
             self._working_since.pop(terminal_id, None)
 
-            # Delete DB record
             try:
-                delete_terminal(terminal_id)
+                terminal_service.delete_terminal(terminal_id)
             except Exception as e:
                 logger.warning(f"pane.closed: failed to delete terminal {terminal_id}: {e}")
 
@@ -732,12 +729,11 @@ class HerdrInboxService:
                 if not session_name:
                     return
 
-            # Delete all DB terminals for this session
             try:
-                delete_terminals_by_session(session_name)
+                session_service.delete_session(session_name)
             except Exception as e:
                 logger.warning(
-                    f"workspace.closed: failed to delete terminals for {session_name}: {e}"
+                    f"workspace.closed: failed to cleanup session {session_name}: {e}"
                 )
 
             # Prune maps for terminals belonging to this session. Match on each

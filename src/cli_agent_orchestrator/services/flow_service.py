@@ -14,15 +14,10 @@ from apscheduler.triggers.cron import CronTrigger  # type: ignore
 from cli_agent_orchestrator.backends.registry import get_backend
 from cli_agent_orchestrator.clients.database import create_flow as db_create_flow
 from cli_agent_orchestrator.clients.database import delete_flow as db_delete_flow
-from cli_agent_orchestrator.clients.database import (
-    delete_terminals_by_session,
-)
 from cli_agent_orchestrator.clients.database import get_flow as db_get_flow
 from cli_agent_orchestrator.clients.database import get_flows_to_run as db_get_flows_to_run
 from cli_agent_orchestrator.clients.database import list_flows as db_list_flows
-from cli_agent_orchestrator.clients.database import (
-    list_terminals_by_session,
-)
+from cli_agent_orchestrator.clients.database import list_terminals_by_session
 from cli_agent_orchestrator.clients.database import update_flow_enabled as db_update_flow_enabled
 from cli_agent_orchestrator.clients.database import (
     update_flow_run_times as db_update_flow_run_times,
@@ -30,10 +25,8 @@ from cli_agent_orchestrator.clients.database import (
 from cli_agent_orchestrator.constants import DEFAULT_PROVIDER, PROVIDERS
 from cli_agent_orchestrator.models.flow import Flow
 from cli_agent_orchestrator.models.terminal import TerminalStatus
-from cli_agent_orchestrator.providers.manager import provider_manager
-from cli_agent_orchestrator.services.fifo_reader import fifo_manager
 from cli_agent_orchestrator.services.status_monitor import status_monitor
-from cli_agent_orchestrator.services.terminal_service import create_terminal, send_input
+from cli_agent_orchestrator.services.terminal_service import create_terminal, delete_terminal, send_input
 from cli_agent_orchestrator.utils.template import render_template
 
 logger = logging.getLogger(__name__)
@@ -244,21 +237,11 @@ async def execute_flow(name: str) -> bool:
                 logger.info(f"Flow {name}: session {session_name} is busy, skipping")
                 return False
             for t in terminals:
-                provider_manager.cleanup_provider(t["id"])
-                # Tear down the event-driven pipeline for each recycled terminal:
-                # stop the FIFO reader thread (and unlink its *.fifo file) and clear
-                # the StatusMonitor buffers. Without this, repeated flow runs leak
-                # background reader threads and stale FIFO files / status entries.
                 try:
-                    fifo_manager.stop_reader(t["id"])
+                    delete_terminal(t["id"])
                 except Exception as e:
-                    logger.warning(f"Failed to stop FIFO reader for {t['id']}: {e}")
-                try:
-                    status_monitor.clear_terminal(t["id"])
-                except Exception as e:
-                    logger.warning(f"Failed to clear status buffers for {t['id']}: {e}")
+                    logger.warning(f"Failed to recycle terminal {t['id']}: {e}")
             get_backend().kill_session(session_name)
-            delete_terminals_by_session(session_name)
         terminal = await create_terminal(
             session_name=session_name,
             provider=flow.provider,
