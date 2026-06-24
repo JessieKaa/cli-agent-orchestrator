@@ -282,22 +282,48 @@ class ClaudeCodeProvider(BaseProvider):
            this in most cases; this handler is a defensive fallback.
         2. **Workspace trust dialog** – shows "Yes, I trust this folder";
            requires ``Enter``.
+
+        Uses the StatusMonitor's pyte-composited screen (the same rendered text
+        ``get_status_from_screen`` anchors on) rather than the raw byte buffer.
+        The TUI positions words with ``\\x1b[NG`` cursor moves; stripping only
+        ``\\x1b[..m`` color codes leaves the cursor-move escapes inline, so
+        regexes like ``"Yes, I trust this folder"`` never matched even when the
+        dialog was visibly on screen — init then timed out at 30/60s.
         """
+        from cli_agent_orchestrator.services.status_monitor import status_monitor
+        from cli_agent_orchestrator.clients.tmux import tmux_client
+
         start_time = time.time()
         bypass_accepted = False
         while time.time() - start_time < timeout:
-            output = get_backend().get_history(self.session_name, self.window_name)
-            if not output:
-                time.sleep(1.0)
+            # Use tmux capture-pane as the primary source during cold start.
+            # pyte is unreliable here: it can crash on Claude TUI's complex
+            # ANSI sequences (screen torn down) or end up filled with the
+            # launching command's echo (huge system-prompt argument) while
+            # the real TUI frame lives further down. capture-pane returns
+            # exactly what's on the visible pane, escapes stripped, so the
+            # same regex patterns match directly. Cost: one tmux IPC per
+            # tick (~ms), negligible at the 0.5s cadence below.
+            try:
+                raw = tmux_client.get_history(
+                    self.session_name,
+                    self.window_name,
+                    tail_lines=50,
+                    strip_escapes=True,
+                )
+                screen_lines = raw.splitlines() if raw else []
+            except Exception as e:
+                logger.warning(f"capture-pane read failed: {e}")
+                screen_lines = []
+            if not screen_lines:
+                time.sleep(0.5)
                 continue
 
-            clean_output = re.sub(ANSI_CODE_PATTERN, "", output)
+            clean_output = "\n".join(screen_lines)
 
             # 1) Handle bypass permissions prompt (appears before trust prompt).
             #    Only act once — the text stays in the buffer after dismissal.
             if not bypass_accepted and re.search(BYPASS_PROMPT_PATTERN, clean_output):
-                from cli_agent_orchestrator.services.status_monitor import status_monitor
-
                 logger.info("Bypass permissions prompt detected, auto-accepting")
                 # Send Down arrow to move cursor to "Yes, I accept", then Enter.
                 status_monitor.notify_input_sent(self.terminal_id)
@@ -313,19 +339,28 @@ class ClaudeCodeProvider(BaseProvider):
 
             # 2) Handle workspace trust prompt
             if re.search(TRUST_PROMPT_PATTERN, clean_output):
-                from cli_agent_orchestrator.services.status_monitor import status_monitor
-
                 logger.info("Workspace trust prompt detected, auto-accepting")
                 status_monitor.notify_input_sent(self.terminal_id)
                 get_backend().send_special_key(self.session_name, self.window_name, "Enter")
                 return
 
-            # 3) Claude Code fully started — no prompts needed
-            if re.search(r"Welcome to|Claude Code v\d+", clean_output):
+            # 3) Claude Code fully started — no prompts needed.
+            #    Check the BOTTOM region only: the launching command (typed by
+            #    send_keys) gets echoed into the pyte buffer's scrollback and
+            #    contains literal "Welcome"/">" tokens from the system-prompt
+            #    body, which would falsely trip these checks mid-launch.
+            bottom = "\n".join(line.rstrip() for line in screen_lines[-15:] if line.strip())
+            if re.search(r"Welcome to|Claude Code v\d+", bottom):
                 logger.info("Claude Code started without prompts")
+                # Push IDLE so wait_until_status returns immediately — pyte
+                # is unreliable during cold start (crashes on TUI escapes or
+                # gets stuck on the launching command echo) and may never
+                # publish IDLE on its own.
+                status_monitor._apply_detection(self.terminal_id, TerminalStatus.IDLE)
                 return
-            if re.search(IDLE_PROMPT_PATTERN, clean_output):
+            if re.search(IDLE_PROMPT_PATTERN, bottom):
                 logger.info("Claude Code idle prompt detected, no prompts needed")
+                status_monitor._apply_detection(self.terminal_id, TerminalStatus.IDLE)
                 return
 
             time.sleep(1.0)
@@ -364,10 +399,10 @@ class ClaudeCodeProvider(BaseProvider):
         if not await wait_until_status(
             self.terminal_id,
             {TerminalStatus.IDLE, TerminalStatus.COMPLETED},
-            timeout=30.0,
+            timeout=60.0,
             polling_interval=1.0,
         ):
-            raise TimeoutError("Claude Code initialization timed out after 30 seconds")
+            raise TimeoutError("Claude Code initialization timed out after 60 seconds")
 
         self._initialized = True
         return True

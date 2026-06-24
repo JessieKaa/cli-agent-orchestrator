@@ -29,6 +29,7 @@ from cli_agent_orchestrator.clients.database import create_terminal as db_create
 from cli_agent_orchestrator.clients.database import delete_terminal as db_delete_terminal
 from cli_agent_orchestrator.clients.database import (
     get_terminal_metadata,
+    list_all_terminals,
     update_last_active,
     update_terminal_shell_command,
 )
@@ -854,3 +855,78 @@ def delete_terminal(terminal_id: str, registry: PluginRegistry | None = None) ->
     except Exception as e:
         logger.error(f"Failed to delete terminal {terminal_id}: {e}")
         raise
+
+
+def reattach_terminal(terminal_id: str) -> bool:
+    """Re-establish FIFO reader + pipe-pane for an existing terminal.
+
+    Used when a terminal's tmux window is still alive but the server side has
+    lost its monitoring (after a server restart, or after an init-timeout
+    cleanup that tore down the FIFO reader while the tmux pane kept running).
+
+    Returns True if re-attached, False if the tmux window is gone or the
+    backend doesn't use pipe-pane (e.g. herdr).
+    """
+    backend = get_backend()
+    if backend.supports_event_inbox():
+        return False
+
+    metadata = get_terminal_metadata(terminal_id)
+    if not metadata:
+        logger.warning(f"Reattach: terminal {terminal_id} not in DB")
+        return False
+
+    session_name = metadata["tmux_session"]
+    window_name = metadata["tmux_window"]
+
+    if not backend.session_exists(session_name):
+        logger.info(f"Reattach: tmux session {session_name} gone for {terminal_id}")
+        return False
+
+    # TmuxBackend wraps a TmuxClient; the backend itself doesn't expose
+    # window listing, so reach through to the client to verify the window
+    # still exists before re-attaching pipe-pane (otherwise pipe-pane would
+    # silently fail or target the wrong pane).
+    from cli_agent_orchestrator.clients.tmux import tmux_client
+
+    windows = tmux_client.get_session_windows(session_name)
+    if not any(w["name"] == window_name for w in windows):
+        logger.info(
+            f"Reattach: window {window_name} not in session {session_name} for {terminal_id}"
+        )
+        return False
+
+    try:
+        fifo_manager.create_reader(terminal_id)
+        fifo_path = FIFO_DIR / f"{terminal_id}.fifo"
+        backend.pipe_pane(session_name, window_name, str(fifo_path))
+        # Nudge the pane so its current state flows through the new pipe —
+        # pipe-pane only captures output produced after it attaches.
+        backend.send_special_key(session_name, window_name, "Enter")
+        logger.info(
+            f"Reattached terminal {terminal_id} to {session_name}:{window_name}"
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Reattach failed for {terminal_id}: {e}")
+        return False
+
+
+def reattach_all_existing_terminals() -> int:
+    """Startup hook: re-attach every DB terminal whose tmux window still exists.
+
+    Call after the EventBus / StatusMonitor / LogWriter are running so the
+    stream from the re-established pipe-pane is consumed immediately.
+    Returns the number of terminals successfully re-attached.
+    """
+    backend = get_backend()
+    if backend.supports_event_inbox():
+        return 0
+
+    count = 0
+    for t in list_all_terminals():
+        if reattach_terminal(t["id"]):
+            count += 1
+    if count:
+        logger.info(f"Startup re-attach recovered {count} terminal(s)")
+    return count

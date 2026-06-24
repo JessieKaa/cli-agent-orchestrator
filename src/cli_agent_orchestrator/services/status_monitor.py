@@ -77,6 +77,12 @@ class StatusMonitor:
         # keeps status flap-free.
         self._screens: Dict[str, Tuple[object, object]] = {}
         self._bursting: Dict[str, bool] = {}
+        # capture-pane fallback cache (per terminal). Populated when pyte
+        # crashes on a malformed ANSI sequence and the screen has to be
+        # torn down — without this, get_screen_lines() returns [] until a
+        # fresh chunk re-warms pyte, and the idle TUI (which emits nothing
+        # new) leaves the terminal stuck on UNKNOWN until init times out.
+        self._fallback_lines: Dict[str, List[str]] = {}
         # Pending quiescence-detect timer handle per terminal (loop.call_later).
         self._quiesce_handle: Dict[str, asyncio.TimerHandle] = {}
         # The event loop that owns the quiescence timers. Captured when the
@@ -218,7 +224,26 @@ class StatusMonitor:
         """Detect status from the terminal's composited pyte screen."""
         with self._lock:
             scr = self._screens.get(terminal_id)
-            lines: List[str] = list(scr[0].display) if scr is not None else []
+            try:
+                lines: List[str] = list(scr[0].display) if scr is not None else []
+            except Exception:
+                # pyte's Screen.display iterates the buffer and calls
+                # wcwidth(char[0]) per cell; certain ANSI sequences leave an
+                # empty char in the buffer, which raises IndexError and —
+                # without this guard — kills _on_screen_quiescent, starving
+                # wait_until_status of any status update so init times out.
+                # Reset the corrupted screen and fall back to a live tmux
+                # capture-pane so detection keeps working — an idle TUI
+                # emits no new chunks, so pyte never re-warms and the
+                # terminal would otherwise sit on UNKNOWN forever.
+                logger.warning(
+                    f"pyte display access failed for {terminal_id}, "
+                    "resetting screen and using tmux capture-pane fallback"
+                )
+                self._screens.pop(terminal_id, None)
+                lines = self._capture_pane_lines(terminal_id)
+                if lines:
+                    self._fallback_lines[terminal_id] = lines
         if not lines or provider is None:
             return TerminalStatus.UNKNOWN
         try:
@@ -337,6 +362,7 @@ class StatusMonitor:
             self._allow_processing_revert.pop(terminal_id, None)
             self._screens.pop(terminal_id, None)
             self._bursting.pop(terminal_id, None)
+            self._fallback_lines.pop(terminal_id, None)
             handle = self._quiesce_handle.pop(terminal_id, None)
         self._cancel_quiesce_handle(handle)
 
@@ -357,6 +383,7 @@ class StatusMonitor:
             # detected against a fresh viewport, not the failed attempt's.
             self._screens.pop(terminal_id, None)
             self._bursting.pop(terminal_id, None)
+            self._fallback_lines.pop(terminal_id, None)
             handle = self._quiesce_handle.pop(terminal_id, None)
         self._cancel_quiesce_handle(handle)
 
@@ -399,6 +426,69 @@ class StatusMonitor:
         """Get accumulated output buffer for a terminal."""
         with self._lock:
             return self._buffers.get(terminal_id, "")
+
+    def get_screen_lines(self, terminal_id: str) -> List[str]:
+        """Return pyte-composited screen lines for a terminal.
+
+        Unlike ``get_buffer`` (which is the raw byte stream with ANSI escapes),
+        this returns the actual rendered text as a human would see it —
+        cursor-positioned words appear in the right columns, color codes are
+        applied and stripped, wide chars are aligned. Use this whenever a
+        detector needs to match against visible text (e.g. prompt labels that
+        the TUI positions via ``\\x1b[NG`` moves rather than literal spaces).
+        Returns an empty list when no screen has been built yet (no chunks
+        observed) or the pyte buffer is in a corrupted state.
+        """
+        with self._lock:
+            scr = self._screens.get(terminal_id)
+            if scr is not None:
+                try:
+                    return list(scr[0].display)
+                except Exception:
+                    # pyte can crash on malformed buffers (see _detect_screen).
+                    # Fall through to fallback below.
+                    pass
+            cached = self._fallback_lines.get(terminal_id)
+            if cached is not None:
+                return list(cached)
+        # Cold path: no pyte screen yet (e.g. _handle_startup_prompts racing
+        # before the first chunk arrives) and no cached fallback. Pull the
+        # live pane so callers still have visible text to detect on.
+        lines = self._capture_pane_lines(terminal_id)
+        if lines:
+            with self._lock:
+                self._fallback_lines[terminal_id] = lines
+        return lines
+
+    def _capture_pane_lines(self, terminal_id: str) -> List[str]:
+        """Fallback for when pyte can't render: read the live tmux pane.
+
+        Returns stripped-of-ANSI lines from the bottom of the visible pane.
+        Empty list if the terminal isn't a tmux terminal, capture fails, or
+        the metadata lookup misses. Lazy imports avoid a circular dependency
+        with the database/tmux modules at module-load time.
+        """
+        try:
+            from cli_agent_orchestrator.clients.database import (
+                get_terminal_metadata,
+            )
+            from cli_agent_orchestrator.clients.tmux import tmux_client
+
+            metadata = get_terminal_metadata(terminal_id)
+            if not metadata:
+                return []
+            raw = tmux_client.get_history(
+                metadata["tmux_session"],
+                metadata["tmux_window"],
+                tail_lines=50,
+                strip_escapes=True,
+            )
+            return raw.splitlines() if raw else []
+        except Exception as e:
+            logger.debug(
+                f"capture-pane fallback failed for {terminal_id}: {e}"
+            )
+            return []
 
 
 # Module-level singleton

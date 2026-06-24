@@ -183,7 +183,10 @@ SERVER_VERSION = "0.1.0"
 API_BASE_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
 
 # Default timeout (seconds) for HTTP calls to the CAO API server.
-MCP_REQUEST_TIMEOUT = 30
+# Bumped from 30→60: when many stale claude processes are alive on the host,
+# new Claude Code init can exceed 30s. The matching server-side init wait is
+# in providers/claude_code.py (wait_until_status).
+MCP_REQUEST_TIMEOUT = 60
 
 
 # Operators can extend network allowlists via the env vars handled below.

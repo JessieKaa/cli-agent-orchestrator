@@ -286,6 +286,14 @@ async def lifespan(app: FastAPI):
     inbox_service_task = asyncio.create_task(inbox_service.run(registry))
     logger.info("Event bus consumers started (StatusMonitor, LogWriter, InboxService)")
 
+    # Re-attach monitoring for terminals that survived a server restart.
+    # Runs after the EventBus consumers are up so the stream from re-established
+    # pipe-panes is consumed immediately. No-op for event-inbox backends.
+    from cli_agent_orchestrator.services.terminal_service import (
+        reattach_all_existing_terminals,
+    )
+    reattach_all_existing_terminals()
+
     # Start temporary OpenCode inbox poller. GH #115 tracks replacing this
     # provider-specific wakeup path with a unified delivery engine.
     opencode_inbox_task = asyncio.create_task(opencode_inbox_delivery_daemon(registry))
@@ -1043,6 +1051,34 @@ async def run_step(request: Request, body: RunStepRequest) -> RunStepResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to run step: {str(e)}",
         )
+
+
+@app.post("/terminals/{terminal_id}/reattach")
+async def reattach_terminal_endpoint(terminal_id: TerminalId) -> Dict:
+    """Re-establish FIFO + pipe-pane monitoring for a terminal whose tmux
+    window is still alive but whose server-side monitoring was lost (server
+    restart, init-timeout cleanup, etc)."""
+    from cli_agent_orchestrator.services.terminal_service import reattach_terminal
+
+    ok = reattach_terminal(terminal_id)
+    return {"success": ok, "terminal_id": terminal_id}
+
+
+@app.post("/sessions/{session_name}/reattach")
+async def reattach_session_endpoint(session_name: str) -> Dict:
+    """Re-establish monitoring for every terminal in a session whose tmux
+    window still exists. Useful after server restarts."""
+    from cli_agent_orchestrator.clients.database import list_all_terminals
+    from cli_agent_orchestrator.services.terminal_service import reattach_terminal
+
+    reattached = []
+    for t in list_all_terminals():
+        if t["tmux_session"] != session_name:
+            continue
+        if reattach_terminal(t["id"]):
+            reattached.append(t["id"])
+    return {"session_name": session_name, "reattached": reattached, "count": len(reattached)}
+
 
 
 @app.delete("/terminals/{terminal_id}")
