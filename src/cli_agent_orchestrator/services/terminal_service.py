@@ -910,7 +910,14 @@ def reattach_terminal(terminal_id: str) -> bool:
     window_name = metadata["tmux_window"]
 
     if not backend.session_exists(session_name):
-        logger.info(f"Reattach: tmux session {session_name} gone for {terminal_id}")
+        logger.info(
+            f"Reattach: tmux session {session_name} gone for {terminal_id}; "
+            "cleaning up stale DB row"
+        )
+        try:
+            delete_terminal(terminal_id)
+        except Exception as e:
+            logger.warning(f"Reattach: cleanup of {terminal_id} failed: {e}")
         return False
 
     # TmuxBackend wraps a TmuxClient; the backend itself doesn't expose
@@ -922,8 +929,13 @@ def reattach_terminal(terminal_id: str) -> bool:
     windows = tmux_client.get_session_windows(session_name)
     if not any(w["name"] == window_name for w in windows):
         logger.info(
-            f"Reattach: window {window_name} not in session {session_name} for {terminal_id}"
+            f"Reattach: window {window_name} not in session {session_name} for {terminal_id}; "
+            "cleaning up stale DB row"
         )
+        try:
+            delete_terminal(terminal_id)
+        except Exception as e:
+            logger.warning(f"Reattach: cleanup of {terminal_id} failed: {e}")
         return False
 
     try:
@@ -947,16 +959,25 @@ def reattach_all_existing_terminals() -> int:
 
     Call after the EventBus / StatusMonitor / LogWriter are running so the
     stream from the re-established pipe-pane is consumed immediately.
-    Returns the number of terminals successfully re-attached.
+    Returns the number of terminals successfully re-attached. Ghost rows
+    whose tmux session/window has vanished (e.g. tmux server died while
+    cao-server was down) are cleaned up via ``delete_terminal`` inside
+    ``reattach_terminal`` — this loop just tracks the counts.
     """
     backend = get_backend()
     if backend.supports_event_inbox():
         return 0
 
-    count = 0
+    reattached = 0
+    ghost_cleaned = 0
     for t in list_all_terminals():
-        if reattach_terminal(t["id"]):
-            count += 1
-    if count:
-        logger.info(f"Startup re-attach recovered {count} terminal(s)")
-    return count
+        terminal_id = t["id"]
+        if reattach_terminal(terminal_id):
+            reattached += 1
+        elif get_terminal_metadata(terminal_id) is None:
+            ghost_cleaned += 1
+    if reattached:
+        logger.info(f"Startup re-attach recovered {reattached} terminal(s)")
+    if ghost_cleaned:
+        logger.info(f"Startup re-attach cleaned {ghost_cleaned} ghost terminal(s)")
+    return reattached
