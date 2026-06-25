@@ -94,6 +94,12 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
 
   const totalTerminals = sessionData.reduce((sum, s) => sum + s.terminals.length, 0)
 
+  const sessionIdsKey = useMemo(() => sessions.map(s => s.id).join(','), [sessions])
+  const terminalIdsKey = useMemo(
+    () => sessionData.flatMap(s => s.terminals.map(t => t.id)).join(','),
+    [sessionData],
+  )
+
   const allAgentTypes = useMemo(() => {
     const types = new Set<string>()
     sessionData.forEach(s => s.terminals.forEach(t => { types.add(t.agent_profile || 'default') }))
@@ -154,24 +160,40 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
     fetchAll()
     const interval = setInterval(fetchAll, 5000)
     return () => clearInterval(interval)
-  }, [sessions.map(s => s.id).join(',')])
+  }, [sessionIdsKey])
 
-  // Poll statuses
+  // Poll statuses — batched per-session to avoid N+1 fetches
   useEffect(() => {
+    if (!sessionData.length) return
     const allIds = sessionData.flatMap(s => s.terminals.map(t => t.id))
     if (!allIds.length) return
     clearTerminalStatuses(allIds)
-    const fetch = () => {
-      allIds.forEach(id => {
-        api.getTerminalStatus(id)
-          .then(status => { if (status) setTerminalStatus(id, status) })
-          .catch(() => {})
-      })
+    const fetchAllStatuses = async () => {
+      const results = await Promise.all(
+        sessionData.map(async s => {
+          try {
+            return await api.getSessionStatuses(s.name)
+          } catch {
+            return {}
+          }
+        }),
+      )
+      const merged: Record<string, string> = {}
+      for (const r of results) {
+        for (const [id, status] of Object.entries(r)) {
+          if (status) merged[id] = status
+        }
+      }
+      if (Object.keys(merged).length) {
+        for (const [id, status] of Object.entries(merged)) {
+          setTerminalStatus(id, status)
+        }
+      }
     }
-    fetch()
-    const interval = setInterval(fetch, 3000)
+    fetchAllStatuses()
+    const interval = setInterval(fetchAllStatuses, 3000)
     return () => clearInterval(interval)
-  }, [sessionData.flatMap(s => s.terminals.map(t => t.id)).join(',')])
+  }, [terminalIdsKey])
 
   useEffect(() => {
     api.listProfiles().then(p => setProfileCount(p.length)).catch(() => {})

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useStore } from '../store'
 import { api, AgentProfileInfo, ProviderInfo } from '../api'
 import { Bot, Play, Trash2, ChevronRight, Terminal as TermIcon, Monitor, Package, FolderOpen, Tag, Search, Mail, Plus, LogOut, Send, FileText, X } from 'lucide-react'
@@ -21,7 +21,21 @@ const SOURCE_LABELS: Record<string, string> = {
 }
 
 export function AgentPanel() {
-  const { sessions, fetchSessions, activeSession, activeSessionDetail, selectSession, createSession, deleteSession, terminalStatuses, setTerminalStatus } = useStore()
+  // Selectors: only re-render when subscribed slice actually changes.
+  // Action functions have stable references (created once by zustand), so
+  // subscribing to them is free. State slices (sessions, terminalStatuses,
+  // activeSessionDetail) are what trigger re-renders when they change.
+  const sessions = useStore(s => s.sessions)
+  const fetchSessions = useStore(s => s.fetchSessions)
+  const activeSession = useStore(s => s.activeSession)
+  const activeSessionDetail = useStore(s => s.activeSessionDetail)
+  const selectSession = useStore(s => s.selectSession)
+  const createSession = useStore(s => s.createSession)
+  const deleteSession = useStore(s => s.deleteSession)
+  const terminalStatuses = useStore(s => s.terminalStatuses)
+  const setTerminalStatus = useStore(s => s.setTerminalStatus)
+  const clearTerminalStatuses = useStore(s => s.clearTerminalStatuses)
+  const showSnackbar = useStore(s => s.showSnackbar)
   const [provider, setProvider] = useState('kiro_cli')
   const [profile, setProfile] = useState('')
   const [creating, setCreating] = useState(false)
@@ -61,7 +75,6 @@ export function AgentPanel() {
   const [sendInputOpen, setSendInputOpen] = useState<Record<string, boolean>>({})
   const [sendInputValues, setSendInputValues] = useState<Record<string, string>>({})
   const [sendingInput, setSendingInput] = useState<string | null>(null)
-  const { showSnackbar } = useStore()
   const [outputTerminalId, setOutputTerminalId] = useState<string | null>(null)
   const [showSpawnModal, setShowSpawnModal] = useState(false)
 
@@ -124,21 +137,41 @@ export function AgentPanel() {
     }
   }, [activeSession])
 
-  // Poll terminal statuses for visible terminals in the session detail
+  // Poll terminal statuses for visible terminals in the session detail.
+  // Uses the batch endpoint to avoid N+1 GET /terminals/{id} calls.
+  // Also prunes terminalStatuses + terminalWorkDirs so deleted terminals
+  // don't leak in store/local state.
+  const terminalIdsKey = useMemo(
+    () => activeSessionDetail?.terminals.map(t => t.id).join(',') ?? '',
+    [activeSessionDetail],
+  )
   useEffect(() => {
+    if (!activeSession) return
     if (!activeSessionDetail?.terminals.length) return
     const terminalIds = activeSessionDetail.terminals.map(t => t.id)
-    const fetchStatuses = () => {
-      terminalIds.forEach(id => {
-        api.getTerminalStatus(id)
-          .then(status => { if (status) setTerminalStatus(id, status) })
-          .catch(() => {})
-      })
+    // Prune dictionaries to current terminal set (prevents leaks across
+    // session switches and after terminal deletions).
+    clearTerminalStatuses(terminalIds)
+    setTerminalWorkDirs(prev => {
+      const next: Record<string, string | null> = {}
+      for (const id of terminalIds) {
+        if (prev[id] !== undefined) next[id] = prev[id]
+      }
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next
+    })
+
+    const fetchStatuses = async () => {
+      try {
+        const statuses = await api.getSessionStatuses(activeSession)
+        for (const [id, status] of Object.entries(statuses)) {
+          if (status) setTerminalStatus(id, status)
+        }
+      } catch {}
     }
     fetchStatuses()
     const interval = setInterval(fetchStatuses, 3000)
     return () => clearInterval(interval)
-  }, [activeSessionDetail?.terminals.map(t => t.id).join(',')])
+  }, [activeSession, terminalIdsKey])
 
   const handleCreate = async () => {
     if (creatingRef.current || !profile.trim()) return
@@ -170,7 +203,7 @@ export function AgentPanel() {
           .catch(() => setTerminalWorkDirs(prev => ({ ...prev, [t.id]: null })))
       }
     })
-  }, [activeSessionDetail?.terminals.map(t => t.id).join(',')])
+  }, [terminalIdsKey])
 
   const handleAddAgent = async () => {
     if (!addProfile.trim() || !activeSession) return

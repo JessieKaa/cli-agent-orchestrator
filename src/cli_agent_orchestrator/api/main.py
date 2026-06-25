@@ -824,6 +824,31 @@ async def list_terminals_in_session(session_name: str) -> List[Dict]:
         )
 
 
+@app.get("/sessions/{session_name}/statuses")
+async def get_session_statuses(session_name: str) -> Dict[str, str]:
+    """Batch-fetch status for every terminal in a session.
+
+    Returns ``{terminal_id: status}`` so the web UI can replace N+1
+    ``GET /terminals/{id}`` polling calls with a single request.
+    """
+    try:
+        validate_tmux_name(session_name, "session_name")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    try:
+        from cli_agent_orchestrator.clients.database import list_terminals_by_session
+
+        terminals = list_terminals_by_session(session_name)
+        return {
+            t["id"]: status_monitor.get_status(t["id"]).value for t in terminals
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get session statuses: {str(e)}",
+        )
+
+
 @app.get("/terminals/{terminal_id}", response_model=Terminal)
 async def get_terminal(terminal_id: TerminalId) -> Terminal:
     try:

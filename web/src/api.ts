@@ -124,6 +124,7 @@ export const api = {
   // Sessions
   listSessions: () => fetchJSON<Session[]>('/sessions'),
   getSession: (name: string) => fetchJSON<SessionDetail>(`/sessions/${name}`),
+  getSessionStatuses: (name: string) => fetchJSON<Record<string, string>>(`/sessions/${name}/statuses`),
   createSession: (provider: string, agentProfile: string, sessionName?: string, workingDirectory?: string) =>
     fetchJSON<Terminal>(`/sessions?provider=${encodeURIComponent(provider)}&agent_profile=${encodeURIComponent(agentProfile)}${sessionName ? `&session_name=${encodeURIComponent(sessionName)}` : ''}${workingDirectory ? `&working_directory=${encodeURIComponent(workingDirectory)}` : ''}`, { method: 'POST', timeoutMs: 90000 }),
   deleteSession: (name: string) => fetchJSON<{ success: boolean; deleted: string[]; errors: any[] }>(`/sessions/${name}`, { method: 'DELETE' }),
