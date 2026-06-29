@@ -13,6 +13,15 @@ from pathlib import Path
 
 from cli_agent_orchestrator.models.provider import ProviderType
 
+
+def _env_int(name: str, default: int) -> int:
+    """Read an integer env var, falling back when the value is invalid."""
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
 # =============================================================================
 # Session Configuration
 # =============================================================================
@@ -64,8 +73,10 @@ FIFO_DIR.mkdir(parents=True, exist_ok=True)
 # Keeps trailing 8KB of terminal output for pattern matching
 STATE_BUFFER_MAX = 8192
 
-# Max events buffered per subscriber queue before dropping
-EVENT_BUS_MAX_QUEUE_SIZE = 1024
+# Max events buffered per subscriber queue before dropping. Claude's TUI startup
+# can emit thousands of small chunks in a short burst, so keep this comfortably
+# above the old 1024 default while still bounded.
+EVENT_BUS_MAX_QUEUE_SIZE = _env_int("CAO_EVENT_BUS_MAX_QUEUE_SIZE", 16384)
 
 # pyte-rendered status detection. When enabled, the StatusMonitor feeds each
 # terminal's output through a pyte terminal emulator and runs detection against
@@ -371,3 +382,14 @@ WORKFLOW_NAME_RE = r"^[A-Za-z0-9_-]{1,64}$"
 # run_agent_step server-side: the engine (N5) in-process, the handoff MCP client
 # over this single HTTP route (replacing its former six granular round-trips).
 TERMINALS_RUN_STEP_ROUTE = "/terminals/run-step"
+
+# Default directory scanned for workflow spec YAML files when no --dir is given
+# (Bolt 2, N2). Spec files on disk are the single source of truth; the
+# ``workflow_index`` SQLite table is a derived, droppable projection (B2-BR-2).
+WORKFLOW_SPEC_DIR = CAO_HOME_DIR / "workflows"
+
+# Soft cap on the in-memory structured-return store (Bolt 2, N4, ADR-4 / Q1=A).
+# On ``put`` the oldest entry is evicted first when ``len > cap`` — a best-effort,
+# non-blocking eviction that NEVER raises (the store is transient and process-local;
+# the N6 run journal supersedes it). Last-write-wins on the same (run_id, step_id).
+WORKFLOW_OUTPUT_STORE_MAX_ENTRIES = 10000

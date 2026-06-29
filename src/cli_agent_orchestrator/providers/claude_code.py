@@ -228,7 +228,7 @@ class ClaudeCodeProvider(BaseProvider):
                     mcp_file.chmod(0o600)
                 except OSError:
                     pass
-                command_parts.extend(["--mcp-config", str(mcp_file)])
+                command_parts.extend(["--mcp-config", str(mcp_file), "--strict-mcp-config"])
 
         # Apply tool restrictions via --disallowedTools flags.
         # --dangerously-skip-permissions bypasses prompts but --disallowedTools
@@ -363,21 +363,24 @@ class ClaudeCodeProvider(BaseProvider):
                 return
 
             # 3) Claude Code fully started — no prompts needed.
-            #    Check the BOTTOM region only: the launching command (typed by
-            #    send_keys) gets echoed into the pyte buffer's scrollback and
-            #    contains literal "Welcome"/">" tokens from the system-prompt
-            #    body, which would falsely trip these checks mid-launch.
-            bottom = "\n".join(line.rstrip() for line in screen_lines[-15:] if line.strip())
-            if re.search(r"Welcome to|Claude Code v\d+", bottom):
+            #    The version banner is the ONLY reliable "ready" signal here: it
+            #    renders only once the REPL is up and cannot appear in the echoed
+            #    launch command. The old bare IDLE_PROMPT_PATTERN ("> "/"❯ ") check
+            #    was removed: the injected --append-system-prompt text contains
+            #    "> `memory_store`" (start of a line), which the echoed command
+            #    surfaces in the capture buffer within ~300ms and false-matches as
+            #    "idle". The handler then returned BEFORE the workspace-trust dialog
+            #    rendered, leaving it unaccepted; initialize() then blocked on
+            #    {IDLE, COMPLETED} for 30s and the session was killed. Trust/bypass
+            #    dialogs are handled explicitly above; if no banner ever appears the
+            #    loop just waits out its timeout and the downstream
+            #    wait_until_status() remains the real readiness gate.
+            if re.search(r"Welcome to|Claude Code v\d+", clean_output):
                 logger.info("Claude Code started without prompts")
                 # Push IDLE so wait_until_status returns immediately — pyte
                 # is unreliable during cold start (crashes on TUI escapes or
                 # gets stuck on the launching command echo) and may never
                 # publish IDLE on its own.
-                status_monitor._apply_detection(self.terminal_id, TerminalStatus.IDLE)
-                return
-            if re.search(IDLE_PROMPT_PATTERN, bottom):
-                logger.info("Claude Code idle prompt detected, no prompts needed")
                 status_monitor._apply_detection(self.terminal_id, TerminalStatus.IDLE)
                 return
 

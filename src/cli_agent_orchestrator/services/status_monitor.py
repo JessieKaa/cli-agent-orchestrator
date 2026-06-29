@@ -226,28 +226,30 @@ class StatusMonitor:
 
     def _detect_screen(self, terminal_id: str, provider) -> TerminalStatus:
         """Detect status from the terminal's composited pyte screen."""
+        fallback_buffer: Optional[str] = None
         with self._lock:
             scr = self._screens.get(terminal_id)
+            buffer = self._buffers.get(terminal_id, "")
             try:
                 lines: List[str] = list(scr[0].display) if scr is not None else []
             except Exception:
-                # pyte's Screen.display iterates the buffer and calls
-                # wcwidth(char[0]) per cell; certain ANSI sequences leave an
-                # empty char in the buffer, which raises IndexError and —
-                # without this guard — kills _on_screen_quiescent, starving
-                # wait_until_status of any status update so init times out.
-                # Reset the corrupted screen and fall back to a live tmux
-                # capture-pane so detection keeps working — an idle TUI
-                # emits no new chunks, so pyte never re-warms and the
-                # terminal would otherwise sit on UNKNOWN forever.
-                logger.warning(
-                    f"pyte display access failed for {terminal_id}, "
-                    "resetting screen and using tmux capture-pane fallback"
+                # pyte can transiently hold zero-length cell data while rendering
+                # complex TUI redraws. Fall back to raw-buffer detection instead of
+                # letting the quiescence callback tear down status monitoring.
+                logger.exception(
+                    "Error rendering screen status for %s; falling back to raw buffer",
+                    terminal_id,
                 )
-                self._screens.pop(terminal_id, None)
-                lines = self._capture_pane_lines(terminal_id)
-                if lines:
-                    self._fallback_lines[terminal_id] = lines
+                fallback_buffer = buffer
+                lines = []
+        if fallback_buffer is not None:
+            if provider is None:
+                return TerminalStatus.UNKNOWN
+            try:
+                return provider.get_status(fallback_buffer)
+            except Exception:
+                logger.exception("Error detecting fallback status for %s", terminal_id)
+                return TerminalStatus.UNKNOWN
         if not lines or provider is None:
             return TerminalStatus.UNKNOWN
         try:
@@ -466,7 +468,28 @@ class StatusMonitor:
                     return TerminalStatus.UNKNOWN
 
         with self._lock:
-            return self._last_status.get(terminal_id, TerminalStatus.UNKNOWN)
+            cached = self._last_status.get(terminal_id, TerminalStatus.UNKNOWN)
+            # When cached status is PROCESSING, the debounced detection may be
+            # stuck: TUI providers (kiro-cli) can send escape sequences
+            # continuously after becoming idle, preventing the 200ms quiescence
+            # timer from ever firing. Do a fresh detection from the current
+            # buffer so poll-based callers (wait_until_status) catch the
+            # PROCESSING→ready transition without waiting for stream silence.
+            if cached == TerminalStatus.PROCESSING:
+                buffer = self._buffers.get(terminal_id, "")
+            else:
+                buffer = ""
+
+        if cached == TerminalStatus.PROCESSING and buffer:
+            fresh = self._detect_status(terminal_id, buffer)
+            logger.debug(
+                f"get_status [{terminal_id}]: cached=PROCESSING, "
+                f"fresh={fresh.value}, buffer_len={len(buffer)}"
+            )
+            if fresh != TerminalStatus.PROCESSING and fresh != TerminalStatus.UNKNOWN:
+                self._apply_detection(terminal_id, fresh)
+                return fresh
+        return cached
 
     def get_buffer(self, terminal_id: str) -> str:
         """Get accumulated output buffer for a terminal."""
