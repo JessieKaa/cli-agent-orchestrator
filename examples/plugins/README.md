@@ -7,6 +7,7 @@ CAO plugins are observer-only extensions that react to server-side events (sessi
 | Example | Description |
 |---------|-------------|
 | **[cao-discord](cao-discord/)** | Forwards inter-agent messages to a Discord channel via webhook, rendering your CAO workflow as a live group chat in Discord. |
+| **[cao-ilink-webhook](cao-ilink-webhook/)** | Forwards agent status transitions (`post_status_change`) and terminal creation (`post_create_terminal`) to a WeChat user via a local iLink Webhook Service — pushes a WeChat notification every time a worker finishes a phase of work. |
 
 ## Authoring Your Own
 

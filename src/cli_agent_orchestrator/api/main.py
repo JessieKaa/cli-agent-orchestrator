@@ -308,6 +308,12 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     bus.set_loop(loop)
 
+    # Inject the plugin registry into StatusMonitor so accepted status
+    # transitions dispatch a post_status_change plugin event. Mirrors the
+    # bus.set_loop() pattern: setter-based injection to keep StatusMonitor's
+    # __init__ signature stable across upstream merges.
+    status_monitor.set_registry(registry)
+
     # Start event bus consumers as background tasks
     status_monitor_task = asyncio.create_task(status_monitor.run())
     log_writer_task = asyncio.create_task(log_writer.run())

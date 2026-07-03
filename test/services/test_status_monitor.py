@@ -7,9 +7,10 @@ provider's native status. These tests pin both paths.
 """
 
 import threading
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from cli_agent_orchestrator.models.terminal import TerminalStatus
+from cli_agent_orchestrator.plugins import PostStatusChangeEvent
 from cli_agent_orchestrator.services.status_monitor import StatusMonitor
 
 
@@ -377,3 +378,106 @@ class TestRawDebounceArmedDetection:
         sm._process_chunk("t1", "● Working on task...")
 
         assert sm._last_status["t1"] == TerminalStatus.PROCESSING
+
+
+def _registry_mock() -> MagicMock:
+    """Build a registry double whose async dispatch can be asserted directly.
+
+    Mirrors the pattern in test/services/test_plugin_event_emission.py:27-32.
+    """
+
+    registry = MagicMock()
+    registry.dispatch = AsyncMock()
+    return registry
+
+
+class TestPluginEventEmission:
+    """Verify _apply_detection dispatches post_status_change on transitions.
+
+    The dispatch path goes through dispatch_plugin_event(), which in a sync
+    test context (no running event loop) runs the registry coroutine inline
+    via asyncio.run — so registry.dispatch is awaited by the time
+    _apply_detection returns.
+    """
+
+    @patch("cli_agent_orchestrator.services.status_monitor.bus")
+    def test_first_detection_dispatches_with_empty_old_status(self, _mock_bus):
+        """First transition into a known status carries old_status=''."""
+
+        sm = StatusMonitor()
+        registry = _registry_mock()
+        sm.set_registry(registry)
+
+        sm._apply_detection("t1", TerminalStatus.IDLE)
+
+        registry.dispatch.assert_called_once()
+        event_type, event = registry.dispatch.call_args.args
+        assert event_type == "post_status_change"
+        assert isinstance(event, PostStatusChangeEvent)
+        assert event.terminal_id == "t1"
+        assert event.old_status == ""
+        assert event.new_status == "idle"
+
+    @patch("cli_agent_orchestrator.services.status_monitor.bus")
+    def test_subsequent_transition_carries_previous_status(self, _mock_bus):
+        """A real transition carries the previously-latched status as old."""
+
+        sm = StatusMonitor()
+        registry = _registry_mock()
+        sm.set_registry(registry)
+        sm._last_status["t1"] = TerminalStatus.PROCESSING
+
+        sm._apply_detection("t1", TerminalStatus.COMPLETED)
+
+        event_type, event = registry.dispatch.call_args.args
+        assert event_type == "post_status_change"
+        assert event.old_status == "processing"
+        assert event.new_status == "completed"
+
+    @patch("cli_agent_orchestrator.services.status_monitor.bus")
+    def test_no_dispatch_when_status_unchanged(self, _mock_bus):
+        """Re-detecting the same value short-circuits before dispatch."""
+
+        sm = StatusMonitor()
+        registry = _registry_mock()
+        sm.set_registry(registry)
+        sm._last_status["t1"] = TerminalStatus.IDLE
+
+        sm._apply_detection("t1", TerminalStatus.IDLE)
+
+        registry.dispatch.assert_not_called()
+
+    @patch("cli_agent_orchestrator.services.status_monitor.bus")
+    def test_no_dispatch_when_sticky_ready_latch_blocks_downgrade(self, _mock_bus):
+        """A latch-suppressed transition (PROCESSING after IDLE) does not dispatch."""
+
+        sm = StatusMonitor()
+        registry = _registry_mock()
+        sm.set_registry(registry)
+        sm._last_status["t1"] = TerminalStatus.IDLE
+        # _allow_processing_revert is False, so the sticky latch refuses the
+        # IDLE→PROCESSING downgrade — exactly the case _apply_detection must
+        # neither latch nor dispatch.
+        sm._allow_processing_revert["t1"] = False
+
+        sm._apply_detection("t1", TerminalStatus.PROCESSING)
+
+        registry.dispatch.assert_not_called()
+        assert sm._last_status["t1"] == TerminalStatus.IDLE
+
+    @patch("cli_agent_orchestrator.services.status_monitor.bus")
+    def test_no_dispatch_when_registry_unset(self, _mock_bus):
+        """Without a registry injected, transitions still publish but don't dispatch.
+
+        Backwards-compatibility: StatusMonitor constructed directly (unit tests,
+        imported in isolation) must not crash when no plugin registry is wired.
+        """
+
+        sm = StatusMonitor()
+        # Deliberately do NOT call set_registry — _registry stays None.
+
+        sm._apply_detection("t1", TerminalStatus.IDLE)
+
+        # No registry means no dispatch path to assert against; the assertion
+        # is that we reached this line at all (no AttributeError raised).
+        assert sm._last_status["t1"] == TerminalStatus.IDLE

@@ -9,6 +9,7 @@ from cli_agent_orchestrator.plugins.events import (
     PostKillSessionEvent,
     PostKillTerminalEvent,
     PostSendMessageEvent,
+    PostStatusChangeEvent,
 )
 
 
@@ -55,6 +56,19 @@ class TestEventDefaults:
 
         assert event.event_type == "post_kill_terminal"
         assert event.session_id is None
+
+    def test_post_status_change_event_defaults(self) -> None:
+        """PostStatusChangeEvent defaults to the post_status_change type."""
+
+        event = PostStatusChangeEvent()
+
+        assert event.event_type == "post_status_change"
+        assert event.session_id is None
+        assert event.terminal_id == ""
+        assert event.old_status == ""
+        assert event.new_status == ""
+        assert event.agent_name is None
+        assert event.provider == ""
 
     def test_base_event_has_utc_timestamp(self) -> None:
         """CaoEvent auto-populates a timezone-aware UTC timestamp."""
@@ -120,3 +134,22 @@ class TestEventFields:
         assert killed_event.session_id == "session-2"
         assert killed_event.terminal_id == "term-1"
         assert killed_event.agent_name == "worker"
+
+    def test_post_status_change_event_carries_transition_fields(self) -> None:
+        """PostStatusChangeEvent carries the terminal ID and old/new status values."""
+
+        event = PostStatusChangeEvent(
+            session_id="session-3",
+            terminal_id="term-1",
+            old_status="processing",
+            new_status="completed",
+            agent_name="worker",
+            provider="claude_code",
+        )
+
+        assert event.session_id == "session-3"
+        assert event.terminal_id == "term-1"
+        assert event.old_status == "processing"
+        assert event.new_status == "completed"
+        assert event.agent_name == "worker"
+        assert event.provider == "claude_code"

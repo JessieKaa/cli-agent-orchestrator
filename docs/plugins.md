@@ -160,6 +160,24 @@ Fires after a terminal has been shut down.
 
 Example use: remove the terminal from an external inventory or dashboard.
 
+### `post_status_change`
+
+Fires after a terminal's status transitions to a new value — the moment an agent finishes a phase of work (idle/completed), needs human input (waiting_user_answer), or terminates abnormally (error). Emitted by `StatusMonitor._apply_detection` after the sticky-latch rules accept the transition, so flap noise (UNKNOWN overwrites, ready→PROCESSING bounces during a paste) does not fire.
+
+Status values are the string form of `TerminalStatus` (`unknown`, `idle`, `processing`, `completed`, `waiting_user_answer`, `error`) — plugins can consume them without importing the enum.
+
+| Field          | Description                                                              |
+|----------------|--------------------------------------------------------------------------|
+| `terminal_id`  | Terminal whose status changed                                            |
+| `old_status`   | Previous status string; empty on the terminal's first detection          |
+| `new_status`   | Newly-latched status string                                              |
+| `agent_name`   | Always `None` from the monitor — plugins resolve via `get_terminal_metadata` if needed |
+| `provider`     | Always `""` from the monitor — same reason                               |
+| `session_id`   | Always `None` (the monitor does not look up the session id)              |
+| `timestamp`    | UTC timestamp of the event                                               |
+
+Example use: push a WeChat / Slack / Telegram notification when each worker in a supervisor–worker swarm finishes, so a human does not have to poll `cao` for completion. Plugins can enrich the notification by resolving terminal metadata with `get_terminal_metadata(terminal_id)` and, when appropriate, by reusing `terminal_service.get_output(terminal_id, OutputMode.LAST)` — the same extraction path as the Web UI's **Terminal Output → Last Response** tab.
+
 ## Authoring a plugin
 
 This document focuses on installing and using plugins. For a full plugin-authoring guide — scaffolding a plugin package, subclassing `CaoPlugin`, wiring up `@hook` methods, and testing — see the [`cao-plugin` skill](../skills/cao-plugin/SKILL.md).
@@ -175,4 +193,3 @@ The items below are **not available today** — they describe the direction the 
 - **Hot reload** — pick up plugin install, upgrade, or config changes without restarting `cao-server`.
 - **Improved discovery and installation UX** — a curated plugin index, a `cao plugin install <name>` wrapper, or a dedicated plugins directory that doesn't require sharing the server's Python environment.
 - **First-class per-plugin configuration** — a CAO-delivered configuration channel so plugins no longer have to roll their own env-var / `.env` loading.
-- **Richer event catalog** — additional events such as provider status changes, flow step transitions, and inbox reads.

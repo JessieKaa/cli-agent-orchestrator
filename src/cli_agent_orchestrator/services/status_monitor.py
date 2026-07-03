@@ -17,8 +17,10 @@ from cli_agent_orchestrator.constants import (
     STATE_BUFFER_MAX,
 )
 from cli_agent_orchestrator.models.terminal import TerminalStatus
+from cli_agent_orchestrator.plugins import PostStatusChangeEvent
 from cli_agent_orchestrator.providers.manager import provider_manager
 from cli_agent_orchestrator.services.event_bus import bus
+from cli_agent_orchestrator.services.plugin_dispatch import dispatch_plugin_event
 from cli_agent_orchestrator.utils.event import terminal_id_from_topic
 
 logger = logging.getLogger(__name__)
@@ -92,6 +94,17 @@ class StatusMonitor:
         # so the cancel is marshaled back onto this loop. See
         # _cancel_quiesce_handle.
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        # Plugin registry, injected once from api/main.py lifespan via
+        # set_registry(). When set, every accepted status transition also
+        # dispatches a post_status_change plugin event. Kept None-by-default
+        # so the monitor remains usable in tests that don't care about
+        # plugins. Pattern mirrors services/event_bus.py's set_loop().
+        self._registry: Optional[object] = None
+
+    def set_registry(self, registry) -> None:
+        """Inject the plugin registry. Called once from lifespan before run()."""
+
+        self._registry = registry
 
     async def run(self) -> None:
         """Subscribe to output events and detect status changes."""
@@ -205,6 +218,25 @@ class StatusMonitor:
         # re-enter StatusMonitor while the latch state is mid-update.
         bus.publish(f"terminal.{terminal_id}.status", {"status": detected.value})
         logger.info(f"Terminal {terminal_id} status changed: {detected.value}")
+
+        # Dispatch the post_status_change plugin event after the bus publish.
+        # `last` is the pre-transition value (a local captured inside the lock
+        # at line 172); it is None on the very first detection for this
+        # terminal, in which case we send an empty old_status. agent_name and
+        # provider are intentionally left empty here — plugins that want them
+        # can resolve via get_terminal_metadata(terminal_id), keeping the
+        # StatusMonitor hot path free of DB lookups.
+        if self._registry is not None:
+            old_value = last.value if last is not None else ""
+            dispatch_plugin_event(
+                self._registry,
+                "post_status_change",
+                PostStatusChangeEvent(
+                    terminal_id=terminal_id,
+                    old_status=old_value,
+                    new_status=detected.value,
+                ),
+            )
 
     # ----- pyte rendered-screen detection (edge-debounced) -------------------
 

@@ -73,3 +73,25 @@ class PostKillTerminalEvent(CaoEvent):
     event_type: str = "post_kill_terminal"
     terminal_id: str = ""
     agent_name: str | None = None
+
+
+@dataclass
+class PostStatusChangeEvent(CaoEvent):
+    """Emitted after a terminal's status transitions to a new value.
+
+    Fires from StatusMonitor._apply_detection on every latched status change
+    (after the sticky-latch rules have accepted the transition). Does NOT fire
+    for UNKNOWN overwrites of a known status — those are suppressed inside
+    _apply_detection as flap noise.
+
+    Status values are the string form of TerminalStatus (e.g. "idle",
+    "processing", "completed", "waiting_user_answer", "error") so plugins can
+    consume them without importing the TerminalStatus enum.
+    """
+
+    event_type: str = "post_status_change"
+    terminal_id: str = ""
+    old_status: str = ""
+    new_status: str = ""
+    agent_name: str | None = None
+    provider: str = ""
