@@ -10,7 +10,11 @@ import requests
 from fastmcp import FastMCP
 from pydantic import Field
 
-from cli_agent_orchestrator.constants import API_BASE_URL, DEFAULT_PROVIDER
+from cli_agent_orchestrator.constants import (
+    API_BASE_URL,
+    DEFAULT_PROVIDER,
+    WORKFLOW_RUN_REQUEST_TIMEOUT,
+)
 from cli_agent_orchestrator.mcp_server.models import HandoffResult
 from cli_agent_orchestrator.models.inbox import OrchestrationType
 from cli_agent_orchestrator.models.terminal import TerminalStatus
@@ -1241,7 +1245,10 @@ async def memory_store(
     content: str = Field(description="Memory content to store (markdown supported)"),
     scope: str = Field(
         default="project",
-        description='Memory scope: "global", "project", "session", or "agent"',
+        description=(
+            'Memory scope: "global", "project", "session", "agent", or '
+            '"federated" (machine-wide shared tier; rejects credentials)'
+        ),
     ),
     memory_type: str = Field(
         default="project",
@@ -1301,7 +1308,10 @@ async def memory_recall(
     ),
     scope: Optional[str] = Field(
         default=None,
-        description='Filter by scope: "global", "project", "session", "agent". Omit to search all.',
+        description=(
+            'Filter by scope: "global", "project", "session", "agent", '
+            '"federated". Omit to search all.'
+        ),
     ),
     memory_type: Optional[str] = Field(
         default=None,
@@ -1385,7 +1395,10 @@ async def memory_forget(
     key: str = Field(description="Key of the memory to remove (e.g. 'prefer-pytest')"),
     scope: str = Field(
         default="project",
-        description='Scope of the memory to remove: "global", "project", "session", or "agent"',
+        description=(
+            'Scope of the memory to remove: "global", "project", "session", '
+            '"agent", or "federated"'
+        ),
     ),
 ) -> Dict[str, Any]:
     """Remove a memory by key and scope.
@@ -1474,6 +1487,86 @@ async def workflow_return(
         validated=bool(data.get("validated", False)),
         errors=list(data.get("errors", [])),
     ).model_dump()
+
+
+@mcp.tool()
+async def workflow_run(
+    name_or_path: str = Field(description="Workflow name (indexed) or path to a spec YAML file"),
+    inputs: Optional[Dict[str, Any]] = Field(
+        default=None, description="Run inputs, validated against the spec's declared inputs"
+    ),
+) -> Dict[str, Any]:
+    """Run a workflow to completion and return the aggregated result (issue #312, N5).
+
+    A thin HTTP client over ``POST /workflows/runs`` (single seam, B3-BR-15): the
+    engine runs the spec in-process in the server and this tool blocks on the HTTP
+    request until the run finishes (Q1=A, mirrors handoff). Returns a structured
+    envelope on EVERY path — it never raises into the agent loop. ``ok=False``
+    carries the server error detail (unknown workflow, invalid inputs, a reserved
+    mode that is not built yet, etc.).
+    """
+    payload: Dict[str, Any] = {"name_or_path": name_or_path, "inputs": inputs or {}}
+    try:
+        # The server awaits the WHOLE run inline (Q1=A), so this blocks for the full
+        # run duration — use the worst-case-covering run timeout, NOT the short
+        # per-call _mcp_timeout() (mirrors handoff's timeout + 180.0 reasoning).
+        response = requests.post(
+            f"{API_BASE_URL}/workflows/runs",
+            json=payload,
+            timeout=WORKFLOW_RUN_REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as e:
+        return {"ok": False, "error": f"could not reach cao-server: {e}"}
+
+    if response.status_code != 200:
+        detail = _extract_error_detail(response, f"status {response.status_code}")
+        return {"ok": False, "error": detail}
+
+    data = response.json()
+    return {
+        "ok": True,
+        "run_id": data.get("run_id"),
+        "state": data.get("state"),
+        "steps": data.get("steps", []),
+    }
+
+
+@mcp.tool()
+async def workflow_cancel(
+    run_id: str = Field(description="The run id to cancel (from a prior workflow_run)"),
+) -> Dict[str, Any]:
+    """Cooperatively cancel a running workflow (issue #312, N5).
+
+    A thin HTTP client over ``POST /workflows/runs/{run_id}/cancel``. Returns a
+    structured envelope on every path — never raises into the agent loop. The
+    cancel is cooperative: the in-flight step runs to natural completion before the
+    run settles to CANCELLED.
+    """
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/workflows/runs/{run_id}/cancel",
+            timeout=_mcp_timeout(),
+        )
+    except requests.RequestException as e:
+        return {"ok": False, "error": f"could not reach cao-server: {e}"}
+
+    if response.status_code != 200:
+        detail = _extract_error_detail(response, f"status {response.status_code}")
+        return {"ok": False, "error": detail}
+
+    return {"ok": True, "run_id": run_id}
+
+
+# The MCP Apps surface — tools (render_dashboard / render_agent_view /
+# cao_fetch_history / subscribe_events / submit_command), the ui://cao/* resources,
+# the topology widget (cao://widget/topology + /widgets/topology/), and the SEP-2133
+# capability advertisement — is packaged as the built-in ``mcp_apps`` plugin and
+# registered here through the cao.plugins entry-point group (each plugin's
+# on_mcp_server hook runs best-effort). The surface is default-off: a no-op unless
+# CAO_MCP_APPS_ENABLED is set, so the default posture is unchanged.
+from cli_agent_orchestrator.plugins.registry import register_mcp_server_surfaces  # noqa: E402
+
+register_mcp_server_surfaces(mcp)
 
 
 def main():

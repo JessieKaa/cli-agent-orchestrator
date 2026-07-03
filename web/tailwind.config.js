@@ -2,6 +2,10 @@
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   darkMode: 'class',
+  // cao-* semantic colors come from the generated preset (design-tokens/gen.mjs).
+  // The gray + app-bg CSS-var tokens below extend the preset so dark mode can
+  // recolor the gray scale by swapping variables under .dark (vars live in src/index.css).
+  presets: [require('./tailwind.preset.cjs')],
   theme: {
     extend: {
       colors: {

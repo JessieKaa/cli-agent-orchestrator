@@ -19,6 +19,7 @@ from typing import Annotated, Dict, List, Optional, cast
 from fastapi import (
     BackgroundTasks,
     Body,
+    Depends,
     FastAPI,
     HTTPException,
     Query,
@@ -42,6 +43,7 @@ from cli_agent_orchestrator.clients.database import (
 )
 from cli_agent_orchestrator.constants import (
     ALLOWED_HOSTS,
+    API_BASE_URL,
     CAO_HOME_DIR,
     CORS_ORIGINS,
     DEFAULT_PROVIDER,
@@ -55,6 +57,7 @@ from cli_agent_orchestrator.constants import (
     WS_ALLOWED_CLIENTS,
     add_local_cors_origins,
 )
+from cli_agent_orchestrator.ext_apps import mount_widget_static
 from cli_agent_orchestrator.models.flow import Flow
 from cli_agent_orchestrator.models.inbox import MessageStatus, OrchestrationType
 from cli_agent_orchestrator.models.memory import (
@@ -65,6 +68,16 @@ from cli_agent_orchestrator.models.memory import (
 )
 from cli_agent_orchestrator.models.terminal import Terminal, TerminalId
 from cli_agent_orchestrator.plugins import PluginRegistry
+from cli_agent_orchestrator.security.auth import (
+    SCOPE_ADMIN,
+    SCOPE_READ,
+    SCOPE_WRITE,
+    SCOPES_SUPPORTED,
+    get_authorization_servers,
+    get_current_scopes,
+    is_auth_enabled,
+    require_any_scope,
+)
 from cli_agent_orchestrator.services import (
     flow_service,
     session_service,
@@ -76,6 +89,8 @@ from cli_agent_orchestrator.services.cleanup_service import (
     cleanup_old_data,
 )
 from cli_agent_orchestrator.services.event_bus import bus
+from cli_agent_orchestrator.services.event_log_service import RING_CAPACITY
+from cli_agent_orchestrator.services.event_primitives import KINDS as EVENT_KINDS
 from cli_agent_orchestrator.services.herdr_inbox_registry import set_herdr_inbox_service
 from cli_agent_orchestrator.services.herdr_inbox_service import HerdrInboxService
 from cli_agent_orchestrator.services.inbox_service import inbox_service
@@ -211,6 +226,19 @@ class StepOutputRequest(BaseModel):
     output: Dict = Field(description="The worker-emitted JSON output for the step")
     output_schema: Optional[Dict] = Field(
         default=None, description="The step's JSON-Schema (Draft 2020-12); None = no validation"
+    )
+
+
+class WorkflowRunRequest(BaseModel):
+    """Request body for ``POST /workflows/runs`` (Bolt 3, N5, C5)."""
+
+    name_or_path: str = Field(description="Workflow name (indexed) or path to a spec YAML file")
+    inputs: Dict = Field(
+        default_factory=dict, description="Run inputs validated against spec.inputs"
+    )
+    run_id: Optional[str] = Field(
+        default=None,
+        description="Optional run id (matches WORKFLOW_NAME_RE); auto-generated if omitted",
     )
 
 
@@ -456,6 +484,32 @@ app.add_middleware(
 )
 
 
+@app.get("/.well-known/oauth-protected-resource")
+async def oauth_protected_resource_metadata():
+    """RFC 9728 Protected Resource Metadata.
+
+    Advertises the resource audience, the authorization server(s), the supported
+    scopes (``cao:read``/``cao:write``/``cao:admin``), and the supported bearer
+    methods so OAuth clients can discover how to obtain access. Returns HTTP 404
+    when auth is disabled (default-off), so the localhost-only posture is
+    byte-for-byte unchanged.
+    """
+    if not is_auth_enabled():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="auth disabled")
+
+    audience = (
+        os.getenv("CAO_AUTH_AUDIENCE", "").strip()
+        or os.getenv("AUTH0_AUDIENCE", "").strip()
+        or API_BASE_URL
+    )
+    return {
+        "resource": audience,
+        "authorization_servers": get_authorization_servers(),
+        "scopes_supported": SCOPES_SUPPORTED,
+        "bearer_methods_supported": ["header"],
+    }
+
+
 @app.get("/health")
 async def health_check():
     import shutil
@@ -478,6 +532,109 @@ async def health_check():
             "claude": _probe("claude"),
         },
     }
+
+
+def _mcp_apps_enabled() -> bool:
+    """Whether the MCP Apps HTTP surface (event stream + widget) is enabled.
+
+    Mirrors the ``CAO_MCP_APPS_ENABLED`` gate used by the ``mcp_apps`` plugin,
+    ``app_tools``, ``sep2133`` and the ``event_log_publisher`` observer so the
+    whole surface is consistently default-off.
+    """
+
+    return os.getenv("CAO_MCP_APPS_ENABLED", "false").lower() in ("1", "true", "yes")
+
+
+def _require_mcp_apps_enabled() -> None:
+    """Raise 404 when the MCP Apps surface is disabled (default-off).
+
+    The ``/events`` SSE stream and ``/events/history`` replay expose fleet
+    metadata (terminal ids, session names, routing/launch/kill topology), so
+    they must not be reachable unless an operator opts in via
+    ``CAO_MCP_APPS_ENABLED`` — matching the default-off posture of the rest of
+    the surface (tools, resources, widget, capability advertisement).
+    """
+
+    if not _mcp_apps_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="MCP Apps surface disabled"
+        )
+
+
+@app.get("/events")
+async def events_stream(
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_READ, SCOPE_WRITE, SCOPE_ADMIN)),
+):
+    """Stream live, normalized fleet events to the iframe as Server-Sent Events.
+
+    Events come from the in-process ``SseBus`` (fed by the ``EventLogPublisher``
+    plugin). The bus is drop-on-slow with a bounded per-subscriber queue, so one
+    stalled iframe never applies back-pressure to the orchestration core; gaps are
+    backfilled by the client via ``/events/history`` / ``cao_fetch_history``.
+
+    Default-off: returns 404 unless ``CAO_MCP_APPS_ENABLED`` is set, so the fleet
+    event timeline (terminal ids, session names, routing/topology metadata) is
+    never exposed when the surface is disabled. When auth is enabled, any of
+    ``cao:read`` / ``cao:write`` / ``cao:admin`` is required (read is the floor).
+    """
+    _require_mcp_apps_enabled()
+
+    from fastapi.responses import StreamingResponse
+
+    from cli_agent_orchestrator.services.sse_bus import get_bus
+
+    async def event_generator():
+        async for event in get_bus().subscribe():
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/events/history")
+async def events_history(
+    limit: int = Query(default=RING_CAPACITY, ge=0, le=RING_CAPACITY),
+    since: Optional[str] = None,
+    kinds: Optional[str] = None,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_READ, SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
+    """Replay recent fleet events from the ring buffer (JSON, newest-last).
+
+    Events are already normalized to the six-primitive vocabulary at append time.
+    ``kinds`` is an optional comma-separated filter; ``since`` is an ISO-8601
+    timestamp lower bound (exclusive).
+
+    Input hardening: ``limit`` is clamped to ``[0, RING_CAPACITY]`` (the buffer is
+    bounded anyway, so a larger value can never return more) and each ``kinds``
+    token is validated against the closed event vocabulary — an unknown kind is
+    rejected with 400 rather than silently matching nothing.
+
+    Default-off: returns 404 unless ``CAO_MCP_APPS_ENABLED`` is set; when auth is
+    enabled, any of ``cao:read`` / ``cao:write`` / ``cao:admin`` is required.
+    """
+    _require_mcp_apps_enabled()
+
+    from cli_agent_orchestrator.services.event_log_service import get_event_log
+
+    kinds_filter = [k.strip() for k in kinds.split(",") if k.strip()] if kinds else None
+    if kinds_filter:
+        invalid = [k for k in kinds_filter if k not in EVENT_KINDS]
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Invalid event kind(s): {', '.join(invalid)}. "
+                    f"Valid kinds: {', '.join(EVENT_KINDS)}"
+                ),
+            )
+    events = get_event_log().history(limit=limit, since=since, kinds=kinds_filter)
+    return {"events": events}
+
+
+# Topology widget static bundle at /widgets/topology/ — the vanilla SSE-driven
+# view consumed alongside the /events stream above. The mount is default-off
+# (no-op unless CAO_MCP_APPS_ENABLED is set) and idempotent, so re-importing this
+# module under dev/reload is safe.
+mount_widget_static(app)
 
 
 @app.get("/agents/profiles")
@@ -509,7 +666,10 @@ async def get_agent_profile_endpoint(name: str) -> Dict:
 
 
 @app.post("/agents/profiles/install")
-async def install_agent_profile_endpoint(request: InstallAgentProfileRequest) -> InstallResult:
+async def install_agent_profile_endpoint(
+    request: InstallAgentProfileRequest,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> InstallResult:
     """Install an agent profile for a target provider.
 
     HTTP (and transitively ``cao-ops-mcp``, which calls this endpoint) is an
@@ -537,9 +697,7 @@ async def list_providers_endpoint() -> List[Dict]:
     provider_binaries = {
         "kiro_cli": "kiro-cli",
         "claude_code": "claude",
-        "q_cli": "q",
         "codex": "codex",
-        "gemini_cli": "gemini",
         "hermes": "hermes",
         "kimi_cli": "kimi",
         "copilot_cli": "copilot",
@@ -579,7 +737,10 @@ async def get_memory_settings_endpoint() -> Dict:
 
 
 @app.post("/settings/agent-dirs")
-async def set_agent_dirs_endpoint(body: AgentDirsUpdate) -> Dict:
+async def set_agent_dirs_endpoint(
+    body: AgentDirsUpdate,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
     """Update agent directories per provider."""
     from cli_agent_orchestrator.services.settings_service import (
         get_extra_agent_dirs,
@@ -613,7 +774,10 @@ class SkillDirsUpdate(BaseModel):
 
 
 @app.post("/settings/skill-dirs")
-async def set_skill_dirs_endpoint(body: SkillDirsUpdate) -> Dict:
+async def set_skill_dirs_endpoint(
+    body: SkillDirsUpdate,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
     """Update user-added extra skill directories."""
     from cli_agent_orchestrator.constants import SKILLS_DIR
     from cli_agent_orchestrator.services.settings_service import (
@@ -670,6 +834,7 @@ async def create_session(
     allowed_tools: Optional[str] = None,
     memory_manager: Optional[str] = None,
     env_vars: Optional[Dict[str, str]] = Body(default=None, embed=True),
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
 ) -> Terminal:
     """Create a new session with exactly one terminal.
 
@@ -776,7 +941,11 @@ async def get_session(session_name: str) -> Dict:
 
 
 @app.delete("/sessions/{session_name}")
-async def delete_session(request: Request, session_name: str) -> Dict:
+async def delete_session(
+    request: Request,
+    session_name: str,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_ADMIN)),
+) -> Dict:
     try:
         validate_tmux_name(session_name, "session_name")
     except ValueError as e:
@@ -806,6 +975,7 @@ async def create_terminal_in_session(
     working_directory: Optional[str] = None,
     allowed_tools: Optional[str] = None,
     caller_id: Optional[TerminalId] = None,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
 ) -> Terminal:
     """Create additional terminal in existing session."""
     try:
@@ -946,6 +1116,7 @@ async def send_terminal_input(
     message: str,
     sender_id: Optional[str] = None,
     orchestration_type: Optional[OrchestrationType] = None,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
 ) -> Dict:
     try:
         success = terminal_service.send_input(
@@ -968,7 +1139,11 @@ async def send_terminal_input(
 
 
 @app.post("/terminals/{terminal_id}/key")
-async def send_terminal_key(terminal_id: TerminalId, key: str) -> Dict:
+async def send_terminal_key(
+    terminal_id: TerminalId,
+    key: str,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
     """Send a tmux special key to a terminal."""
     if not TMUX_KEY_PATTERN.fullmatch(key):
         raise HTTPException(
@@ -1008,7 +1183,10 @@ async def get_terminal_output(
 
 
 @app.post("/terminals/{terminal_id}/exit")
-async def exit_terminal(terminal_id: TerminalId) -> Dict:
+async def exit_terminal(
+    terminal_id: TerminalId,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
     """Send provider-specific exit command to terminal."""
     try:
         terminal_service.exit_terminal_cli(terminal_id)
@@ -1036,7 +1214,11 @@ async def exit_terminal(terminal_id: TerminalId) -> Dict:
         "the live terminal (read it as a field; never regex-scrape `message`)."
     ),
 )
-async def run_step(request: Request, body: RunStepRequest) -> RunStepResponse:
+async def run_step(
+    request: Request,
+    body: RunStepRequest,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> RunStepResponse:
     """Run a single agent step through the shared substrate (N0, #312).
 
     This is the combined server-side endpoint both step callers converge on:
@@ -1192,7 +1374,10 @@ async def get_workflow_endpoint(name: str) -> Dict:
 
 
 @app.delete("/workflows/{name}")
-async def delete_workflow_endpoint(name: str) -> Dict:
+async def delete_workflow_endpoint(
+    name: str,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_ADMIN)),
+) -> Dict:
     """Delete a workflow's spec file and its index row (FR-2.4)."""
     from cli_agent_orchestrator.services import workflow_spec_service
 
@@ -1212,7 +1397,10 @@ async def delete_workflow_endpoint(name: str) -> Dict:
     response_model=StepOutputResponse,
 )
 async def record_step_output_endpoint(
-    run_id: str, step_id: str, body: StepOutputRequest
+    run_id: str,
+    step_id: str,
+    body: StepOutputRequest,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
 ) -> StepOutputResponse:
     """Record a worker's structured output for a step (FR-4.1, C5).
 
@@ -1238,8 +1426,87 @@ async def record_step_output_endpoint(
         state=record.state.value,
     )
 
+
+# Run-engine endpoints (Bolt 3, N5). ``start_run`` is awaited INLINE (Q1=A): the
+# HTTP request is the blocking wait, matching the synchronous ``workflow_run`` MCP
+# tool. Error mapping (C5 / B3-BR-14): unknown run/spec -> 404, invalid spec/inputs
+# -> 400, cancel-of-finished -> 409, NotBuiltYetError (reserved seam) -> 501,
+# WorkflowEngineError -> 500. Narrow exceptions in the service; mapped here.
+
+
+@app.post("/workflows/runs")
+async def start_workflow_run_endpoint(
+    body: WorkflowRunRequest,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
+    """Resolve a spec, run it to completion inline, return the WorkflowRunResult."""
+    import uuid
+
+    from cli_agent_orchestrator.models.workflow import NotBuiltYetError
+    from cli_agent_orchestrator.services import workflow_service, workflow_spec_service
+
+    try:
+        spec = workflow_spec_service.get_workflow(body.name_or_path)
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"unknown workflow '{body.name_or_path}'",
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    run_id = body.run_id or f"run-{uuid.uuid4().hex[:16]}"
+    try:
+        result = await workflow_service.start_run(spec, body.inputs, run_id)
+    except NotBuiltYetError as e:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(e))
+    except KeyError as e:
+        # Duplicate run_id is a conflict, not a 404.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except workflow_service.WorkflowEngineError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    return result.model_dump()
+
+
+@app.get("/workflows/runs/{run_id}")
+async def get_workflow_run_endpoint(run_id: str) -> Dict:
+    """Return a point-in-time status snapshot for a run (FR-5.5)."""
+    from cli_agent_orchestrator.services import workflow_service
+
+    try:
+        status_snapshot = workflow_service.get_run_status(run_id)
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown run '{run_id}'")
+    return status_snapshot.model_dump()
+
+
+@app.post("/workflows/runs/{run_id}/cancel")
+async def cancel_workflow_run_endpoint(
+    run_id: str,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
+    """Cooperatively cancel a running workflow (FR-5.4)."""
+    from cli_agent_orchestrator.services import workflow_service
+
+    try:
+        workflow_service.cancel_run(run_id)
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown run '{run_id}'")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return {"success": True, "run_id": run_id}
+
+
 @app.delete("/terminals/{terminal_id}")
-async def delete_terminal(request: Request, terminal_id: TerminalId) -> Dict:
+async def delete_terminal(
+    request: Request,
+    terminal_id: TerminalId,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_ADMIN)),
+) -> Dict:
     """Delete a terminal."""
     try:
         success = terminal_service.delete_terminal(
@@ -1261,6 +1528,7 @@ async def create_inbox_message_endpoint(
     receiver_id: TerminalId,
     sender_id: str,
     message: str,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
 ) -> Dict:
     """Create inbox message and attempt immediate delivery."""
     try:
@@ -1550,7 +1818,10 @@ async def get_flow(name: str) -> Flow:
 
 
 @app.post("/flows", response_model=Flow, status_code=status.HTTP_201_CREATED)
-async def create_flow(body: CreateFlowRequest) -> Flow:
+async def create_flow(
+    body: CreateFlowRequest,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Flow:
     """Create a new flow.
 
     Writes a .flow.md file with YAML frontmatter and prompt body, then
@@ -1586,7 +1857,10 @@ async def create_flow(body: CreateFlowRequest) -> Flow:
 
 
 @app.delete("/flows/{name}")
-async def remove_flow(name: str) -> Dict:
+async def remove_flow(
+    name: str,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_ADMIN)),
+) -> Dict:
     """Remove a flow."""
     try:
         flow_service.remove_flow(name)
@@ -1601,7 +1875,10 @@ async def remove_flow(name: str) -> Dict:
 
 
 @app.post("/flows/{name}/enable")
-async def enable_flow(name: str) -> Dict:
+async def enable_flow(
+    name: str,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
     """Enable a flow."""
     try:
         flow_service.enable_flow(name)
@@ -1616,7 +1893,10 @@ async def enable_flow(name: str) -> Dict:
 
 
 @app.post("/flows/{name}/disable")
-async def disable_flow(name: str) -> Dict:
+async def disable_flow(
+    name: str,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
     """Disable a flow."""
     try:
         flow_service.disable_flow(name)
@@ -1631,7 +1911,10 @@ async def disable_flow(name: str) -> Dict:
 
 
 @app.post("/flows/{name}/run")
-async def run_flow(name: str) -> Dict:
+async def run_flow(
+    name: str,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
     """Manually execute a flow."""
     try:
         executed = await flow_service.execute_flow(name)
@@ -1791,6 +2074,7 @@ async def delete_memory_endpoint(
     key: MemoryKey,
     scope: MemoryScope = MemoryScope.PROJECT,
     scope_id: Optional[MemoryScopeId] = None,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_ADMIN)),
 ) -> Dict:
     """Delete a memory by key (mirrors `cao memory delete`).
 
@@ -1829,6 +2113,7 @@ async def delete_memory_endpoint(
 async def clear_memories_endpoint(
     scope: MemoryScope,
     scope_id: Optional[MemoryScopeId] = None,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_ADMIN)),
 ) -> Dict:
     """Clear all memories in a scope (mirrors `cao memory clear`).
 
